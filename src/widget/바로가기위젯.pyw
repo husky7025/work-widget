@@ -43,6 +43,20 @@ SIZE_W, SIZE_H = 424, 190
 TILE, GAP, PAD = 60, 6, 12
 PANEL, TILE_BG, EDGE, GREEN, WHITE = "#f2f0eb", "#ffffff", "#e4e0d8", "#00754A", "#212121"   # 스타벅스 톤: 크림 판 / 타일 / 테두리 / 그린 / 글자
 FONT = "Malgun Gothic"
+# 페이퍼로지 글꼴 — 위젯 폴더의 ttf 를 이 프로그램에서만 쓰게 올린다 (PC에 설치 안 해도 됨 · 실패하면 맑은 고딕)
+_PL = {"r": HERE0 / "Paperlogy-4Regular.ttf", "b": HERE0 / "Paperlogy-7Bold.ttf"}
+try:
+    import ctypes as _ct
+    _ok = all(p.exists() and _ct.windll.gdi32.AddFontResourceExW(str(p), 0x10, 0) > 0 for p in _PL.values())
+except Exception:
+    _ok = False
+FONT_R, FONT_B = ("Paperlogy 4 Regular", "Paperlogy 7 Bold") if _ok else (FONT, FONT)
+
+
+def F(size, bold=False):
+    return (FONT_B, size) if (bold and _ok) else ((FONT_R, size, "bold") if bold else (FONT_R, size))
+
+
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
@@ -200,7 +214,7 @@ class Tray:
 # ── 플립 시계 카드 (Pillow 가 있을 때만 — 없으면 그냥 숫자가 바뀐다) ──
 try:
     from PIL import Image, ImageDraw, ImageFont, ImageTk
-    _FLIP_FONT = r"C:\Windows\Fonts\malgunbd.ttf"
+    _FLIP_FONT = str(_PL["b"]) if _ok else r"C:\Windows\Fonts\malgunbd.ttf"
     ImageFont.truetype(_FLIP_FONT, 10)
     HAVE_FLIP = True
 except Exception:
@@ -317,12 +331,12 @@ class Widget:
         # 위쪽 줄: 📍(항상 위) ⚙(환경설정) ✕(닫기)
         bar = tk.Frame(self.root, bg=PANEL)
         bar.pack(fill="x", padx=PAD - 4, pady=(8, 0))
-        self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=(FONT, 9, "bold"))
+        self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=F(9, True))
         self.title_lb.pack(side="left", padx=(10, 0))
         for text, cmd, tip in (("✕", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
                                ("⚙", self.show_options, "환경설정"),
                                ("📍", self.toggle_pin, "항상 위 켜기/끄기")):
-            b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=(FONT, 10), cursor="hand2", padx=5)
+            b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=F(10), cursor="hand2", padx=5)
             b.pack(side="right")
             b.bind("<Button-1>", lambda e, c=cmd: c())
             if text == "📍":
@@ -346,7 +360,7 @@ class Widget:
         for i, key in enumerate(CLOCK_KEYS):
             c = self.make_tile(self.clock_row, 0, i)
             label = CLOCK_LABEL[key]
-            c.create_text(TILE // 2, 47, text=label, fill=GREEN, font=(FONT, 7, "bold"))
+            c.create_text(TILE // 2, 47, text=label, fill=GREEN, font=F(7, True))
             if key == "ss":
                 c.itemconfigure("edge", fill="#eef6f2", outline="#a9cdbf")
             if HAVE_FLIP:
@@ -356,7 +370,7 @@ class Widget:
                                            top="#e3f0ea" if key == "ss" else None, bottom="#d4e9e2" if key == "ss" else None,
                                            line="#a9cdbf" if key == "ss" else None)
             else:
-                num = c.create_text(TILE // 2, 26, text="--", fill=GREEN if key == "ss" else WHITE, font=(FONT, 18, "bold"))
+                num = c.create_text(TILE // 2, 26, text="--", fill=GREEN if key == "ss" else WHITE, font=F(18, True))
             self.clock[key] = (c, num)
             self.clock_vars[key] = tk.BooleanVar(value=self.clock_on[key])
         # 아랫줄: 단추 4 + 결재대기 칸 + 기관접수대기 칸 (투명도는 ⚙ 메뉴)
@@ -365,14 +379,14 @@ class Widget:
             acc, badge, tint = ACCENT[kind]
             c.create_oval(TILE // 2 - 14, 7, TILE // 2 + 14, 35, fill=badge, outline="")
             c.create_text(TILE // 2, 21, text=icon, fill=acc, font=("Segoe UI Emoji", 14))
-            c.create_text(TILE // 2, 46, text=label, fill=WHITE, font=(FONT, 8, "bold"))
+            c.create_text(TILE // 2, 46, text=label, fill=WHITE, font=F(8, True))
             c.bind("<Button-1>", lambda e, k=kind: self.click(k))
             c.bind("<Enter>", lambda e, w=c, a=acc, tt=tint: w.itemconfigure("edge", outline=a, fill=tt))
             c.bind("<Leave>", lambda e, w=c: w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         sc = self.make_tile(grid, 1, 4, hand=True)
         self.sanctn_cv = sc
-        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=(FONT, 17, "bold"))
-        self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
+        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=F(17, True))
+        self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
         sc.bind("<Button-1>", lambda e: self.refresh_sanctn(manual=True))
         sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#eef6f2"))
         sc.bind("<Leave>", lambda e: sc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
@@ -380,15 +394,15 @@ class Widget:
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
         jc = self.make_tile(grid, 1, 5, hand=True)
         self.jeopsu_cv = jc
-        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=(FONT, 17, "bold"))
-        jc.create_text(TILE // 2, 44, text="교데통\n기관접수", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
+        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=F(17, True))
+        jc.create_text(TILE // 2, 44, text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
         jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#2b5148", fill="#eef6f2"))
         jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.jeopsu_busy = False
         self.opa_var = tk.IntVar(value=int(round(self.opacity * 10) * 10))
 
-        self.status = tk.Label(self.root, text="", bg=PANEL, fg="#c82014", font=(FONT, 8), anchor="w")
+        self.status = tk.Label(self.root, text="", bg=PANEL, fg="#c82014", font=F(8), anchor="w")
         self.status.pack(fill="x", padx=PAD + 2, pady=(6, 0))
         for w in (self.root, self.bgc, bar, self.title_lb, grid, self.status):
             self.bind_drag(w)
@@ -397,17 +411,17 @@ class Widget:
         self.auto_var = tk.BooleanVar(value=self.autostart_on())
         self.auto_cache = self.auto_var.get()
         self.tray = Tray(HERE0 / "업무위젯.ico", "업무위젯 (누르면 열려요)", lambda: self.auto_cache)
-        self.m = tk.Menu(self.root, tearoff=0, font=(FONT, 10))
+        self.m = tk.Menu(self.root, tearoff=0, font=F(10))
         self.m.add_command(label="환경설정 (지역·인증서·암호)", command=self.open_setup)
         self.m.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
-        cm = tk.Menu(self.m, tearoff=0, font=(FONT, 10))
+        cm = tk.Menu(self.m, tearoff=0, font=F(10))
         for key in CLOCK_KEYS:
             cm.add_checkbutton(label=CLOCK_LABEL[key], variable=self.clock_vars[key], command=self.apply_clock)
         cm.add_separator()
         cm.add_command(label="모두 켜기", command=lambda: self.set_all_clock(True))
         cm.add_command(label="모두 끄기 (위젯이 작아져요)", command=lambda: self.set_all_clock(False))
         self.m.add_cascade(label="시계 카드 보이기", menu=cm)
-        om = tk.Menu(self.m, tearoff=0, font=(FONT, 10))
+        om = tk.Menu(self.m, tearoff=0, font=F(10))
         for pct in range(100, 20, -10):
             om.add_radiobutton(label="%d%%" % pct + ("  (흐리게)" if pct == 30 else ""), value=pct, variable=self.opa_var,
                                command=lambda: self.on_opacity(self.opa_var.get()))
@@ -717,9 +731,9 @@ class Widget:
                 pop.configure(bg=color)
                 inner = tk.Frame(pop, bg="#ffffff")
                 inner.pack(padx=2, pady=2)
-                pop._t = tk.Label(inner, bg="#ffffff", font=(FONT, 12, "bold"))
+                pop._t = tk.Label(inner, bg="#ffffff", font=F(12, True))
                 pop._t.pack(padx=22, pady=(14, 2))
-                pop._s = tk.Label(inner, bg="#ffffff", fg="#5c5c5c", font=(FONT, 9))
+                pop._s = tk.Label(inner, bg="#ffffff", fg="#5c5c5c", font=F(9))
                 pop._s.pack(padx=22, pady=(0, 14))
                 for w in (pop, inner, pop._t, pop._s):
                     w.bind("<Button-1>", lambda e: self.close_upd_popup())
