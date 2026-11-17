@@ -37,7 +37,8 @@ try:                                         # 자동 업데이트 (서명 확�
     _uspec.loader.exec_module(UPD)
 except Exception:
     UPD = None
-UPDATE_EVERY_MS = 6 * 60 * 60 * 1000     # 6시간마다 새 버전 확인 (켜고 2분 뒤 첫 확인)
+UPDATE_HOUR = 10                         # 하루 한 번, 오전 10시에 새 버전 확인 (10시에 꺼져 있었으면 그날 켠 뒤 2분쯤에 한 번)
+UPDATE_POLL_MS = 5 * 60 * 1000           # 10시가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
 SIZE_W, SIZE_H = 424, 190
 TILE, GAP, PAD = 60, 6, 12
 PANEL, TILE_BG, EDGE, GREEN, WHITE = "#f4f6fa", "#ffffff", "#e3e7ee", "#16a34a", "#111827"   # 밝은 테마: 판 / 타일 / 테두리 / 강조(초록) / 글자
@@ -752,9 +753,20 @@ class Widget:
                 pass
         self._upd_pop = None
 
+    def update_due(self, now=None):
+        """오늘 아직 확인하지 않았고 오전 10시가 지났으면 True."""
+        now = now or datetime.now()
+        if now.hour < UPDATE_HOUR:
+            return False
+        return K.load_state().get("update_checked") != now.strftime("%Y-%m-%d")
+
     def update_loop(self):
-        self.check_update()
-        self.root.after(UPDATE_EVERY_MS, self.update_loop)
+        try:
+            if self.update_due() and not self.upd_busy:
+                K.save_state(update_checked=datetime.now().strftime("%Y-%m-%d"))
+                self.check_update()
+        finally:
+            self.root.after(UPDATE_POLL_MS, self.update_loop)
 
     def jeopsu_loop(self):
         self.refresh_jeopsu()
