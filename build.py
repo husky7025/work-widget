@@ -38,6 +38,7 @@ OUT_ZIP = HERE.parent / "업무위젯_설치묶음.zip"
 VERSION = (HERE / "VERSION").read_text(encoding="utf-8").strip()
 PUBKEY_FILE = HERE / "signing_public_key.txt"
 REPO = "husky7025/work-widget"
+GUIDE_NAME = "사용설명서.html"     # 겉 묶음 안 안내서 이름 (선생님들이 눌러 보시게 한글로)
 KEYRING_SERVICE, KEYRING_USER = "work-widget-signing", "ed25519-seed"
 sys.path.insert(0, str(SRC / "kit"))
 import work_widget_update as U  # noqa: E402  (서명·검증 코드를 위젯과 같이 쓴다)
@@ -168,11 +169,11 @@ def main():
         shutil.copy2(SCRIPTS / name, payload / name)
     shutil.copy2(SCRIPTS / "install_widget.cmd", dist / "install_widget.cmd")
     shutil.copy2(SCRIPTS / "uninstall_widget.cmd", dist / "uninstall_widget.cmd")
-    shutil.copy2(HERE / "안내서.html", dist / "guide.html")
+    shutil.copy2(HERE / "안내서.html", dist / GUIDE_NAME)
 
-    # 5) 겉 묶음 — 영문 이름만 들어갔는지 확인
+    # 5) 겉 묶음 — 사용설명서만 한글 이름(UTF-8 표시, 탐색기 «모두 풀기» 확인함 · 깨져도 .html 이라 열림), 나머지는 영문만
     names = [f.relative_to(dist).as_posix() for f in sorted(dist.rglob("*")) if f.is_file()]
-    bad = [n for n in names if not n.isascii()]
+    bad = [n for n in names if not n.isascii() and n != GUIDE_NAME]
     if bad:
         sys.exit(f"X 겉 묶음에 한글 이름이 있습니다: {bad}")
     tmp = OUT_ZIP.with_suffix(".tmp")

@@ -6,7 +6,7 @@
 
 1. [work-widget-setup.zip](https://github.com/husky7025/work-widget/releases/latest/download/work-widget-setup.zip) 을 받습니다.
 2. 마우스 오른쪽 → **모두 풀기** → 풀린 폴더의 `install_widget.cmd` 를 더블클릭합니다.
-3. 자세한 내용은 묶음 안의 `guide.html` 을 보세요.
+3. 자세한 내용은 묶음 안의 `사용설명서.html` 을 보세요.
 
 설치한 뒤에는 위젯이 하루 한 번 오전 10시에 새 버전을 확인해 **알아서 업데이트**합니다.
 
