@@ -42,13 +42,19 @@ KEYRING_SERVICE, KEYRING_USER = "work-widget-signing", "ed25519-seed"
 sys.path.insert(0, str(SRC / "kit"))
 import work_widget_update as U  # noqa: E402  (서명·검증 코드를 위젯과 같이 쓴다)
 
-# 설정 창 맨 위 안내 문구 — 보안에 민감한 선생님을 위해 «서버로 보내지 않음»을 분명히 적는다
+# 설정 창 맨 위 안내 문구 — 보안이 걱정되는 선생님을 위해 «서버로 보내지 않음» 등을 분명히 적는다
 PW_OLD = '''    tk.Label(root, text="인증서 암호는 이 컴퓨터의 «Windows 자격 증명 관리자»에만 저장되고, 파일에는 남지 않아요.",
              font=("맑은 고딕", 9), fg=SUB, bg="white").grid(row=1, column=0, columnspan=2, sticky="w", padx=18, pady=(0, 10))'''
-PW_NEW = '''    tk.Label(root, text="🔒 인증서 암호는 선생님 PC에만 저장되고, 위젯 만든 사람이나 다른 서버로 보내지 않아요.\\n"
-                        "     (이 PC의 «Windows 자격 증명 관리자»에 보관 · 로그인할 때 인증서 창에 대신 입력하는 데만 써요)",
-             font=("맑은 고딕", 9, "bold"), fg="#166534", bg="#dcfce7", justify="left", anchor="w", padx=10, pady=6).grid(
-        row=1, column=0, columnspan=2, sticky="we", padx=18, pady=(0, 10))'''
+# 처음 설정할 때(저장된 인증서가 없을 때)만 보인다 — 위젯 오른쪽 클릭으로 다시 열면 숨긴다
+PW_NEW = '''    if not old.get("cert_name"):
+        tk.Label(root, text="🔒 안심하고 쓰세요\\n"
+                            " · 인증서 암호는 이 PC의 «Windows 자격 증명 관리자»에만 저장돼요.\\n"
+                            "   위젯 만든 사람이나 다른 서버로 보내지 않고, 로그인할 때 대신 입력하는 데만 써요.\\n"
+                            " · 위젯은 화면을 «열기만» 해요. 결재·상신·저장 버튼은 누르지 않아요.\\n"
+                            " · 업데이트는 전자서명을 확인한 뒤에만 설치돼서, 가짜 업데이트는 깔리지 않아요.\\n"
+                            " · 외부에서 이 PC로 들어오는 통로를 열지 않아요. 자리 비울 땐 ⊞+L 로 화면 잠금!",
+                 font=("맑은 고딕", 9), fg="#166534", bg="#dcfce7", justify="left", anchor="w", padx=10, pady=6).grid(
+            row=1, column=0, columnspan=2, sticky="we", padx=18, pady=(0, 10))'''
 
 PATCHES = {
     # 출근·퇴근 기본값 08:00 / 16:00 (처음 설치할 때 칸에 미리 채워지는 값 — 선생님이 바꿀 수는 있다)
