@@ -1,0 +1,127 @@
+<!DOCTYPE html>
+<html lang="ko"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>업무 위젯 설치 안내</title>
+<style>
+*{box-sizing:border-box}
+body{margin:0;background:#f3f4f6;font-family:'Malgun Gothic',sans-serif;color:#1f2937;line-height:1.7;font-size:17px}
+.wrap{max-width:820px;margin:0 auto;padding:28px 18px 60px}
+h1{font-size:28px;margin:0 0 6px}
+.sub{color:#4b5563;margin:0 0 22px}
+.card{background:#fff;border-radius:16px;padding:22px 24px;margin:0 0 18px;box-shadow:0 1px 4px rgba(0,0,0,.08)}
+h2{font-size:21px;margin:0 0 12px}
+.btns{display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.b{background:#111;color:#fff;border-radius:14px;padding:14px 10px;text-align:center}
+.b b{display:block;font-size:18px;color:#4ade80}.b span{font-size:14px;color:#d1d5db}
+.step{display:flex;gap:14px;margin:14px 0}
+.n{flex:none;width:34px;height:34px;border-radius:50%;background:#16a34a;color:#fff;font-weight:700;text-align:center;line-height:34px}
+.step p{margin:0}
+.note{background:#fef9c3;border-left:5px solid #eab308;padding:12px 16px;border-radius:8px;margin:12px 0}
+.ok{background:#dcfce7;border-left:5px solid #16a34a;padding:12px 16px;border-radius:8px;margin:12px 0}
+.bad{background:#fee2e2;border-left:5px solid #dc2626;padding:12px 16px;border-radius:8px;margin:12px 0}
+table{width:100%;border-collapse:collapse}
+td,th{border-bottom:1px solid #e5e7eb;padding:10px 8px;text-align:left;vertical-align:top;font-size:16px}
+th{background:#f9fafb}
+code{background:#eef2ff;padding:1px 6px;border-radius:5px;font-size:15px}
+ul{margin:6px 0 0;padding-left:22px}
+@media print{body{background:#fff}.card{box-shadow:none;border:1px solid #ddd}}
+</style></head><body><div class="wrap">
+
+<h1>🧩 업무 위젯 설치 안내</h1>
+<p class="sub">바탕화면에 떠 있는 작은 위젯입니다. 단추를 누르면 인증서 로그인까지 알아서 해 줍니다.</p>
+
+<div class="card">
+<h2>이런 일을 해 줘요</h2>
+<div class="btns">
+<div class="b"><b>1. 업무포털</b><span>로그인 후 메인 화면까지</span></div>
+<div class="b"><b>2. 나이스</b><span>로그인 후 나이스 화면까지</span></div>
+<div class="b"><b>3. 내부기안</b><span>«표준 서식(결재4인,협조4인)» 빈 기안 창</span></div>
+<div class="b"><b>4. 품의등록</b><span>학교회계 &gt; 사업담당 &gt; 품의/정산 &gt; 품의등록 빈 화면</span></div>
+<div class="b"><b>결재대기 (숫자 칸)</b><span>에듀파인 결재대기 건수. 30분마다 자동, 누르면 바로 읽음 (긴급이 있으면 빨간색)</span></div>
+<div class="b"><b>기관접수 (숫자 칸)</b><span>교육행정데이터통합관리 기관접수대기 건수. 30분마다 자동, 누르면 그 화면을 엽니다 (접수는 안 함)</span></div>
+</div>
+<div class="note"><b>화면만 열어 줍니다.</b> 신청·저장·결재·상신은 하지 않아요. 그다음 일은 선생님이 직접 하세요.</div>
+<div class="note"><b>결재대기 숫자는 업무포털이 열려 있어야 읽혀요.</b> 위젯을 켠 뒤 «1. 업무포털»을 한 번 눌러 로그인해 두세요. 안 돼 있으면 칸에 <code>--</code>만 뜨고, 칸을 누르면 이유가 아래에 나옵니다.</div>
+<div class="note"><b>품의등록·결재대기는 한 학교(대전동산고) 에듀파인 화면에서만 시험했어요.</b> 학교·교육청마다 화면이 다르면 안 될 수 있으니, 안 되면 위젯 아래 문구를 알려 주세요.</div>
+<p>오른쪽 위 <b>⚙ → 투명도</b>로 위젯을 흐리게 할 수 있고, 마지막으로 놓은 자리를 기억합니다.</p>
+</div>
+
+<div class="card">
+<h2>① 준비물 (설치 전에 확인)</h2>
+<ul>
+<li><b>구글 크롬</b> (엣지·웨일은 안 돼요)</li>
+<li>이 컴퓨터에 <b>내 교육행정 인증서</b> (보통 <code>C:\GPKI\Certificate\class2</code>). USB 인증서는 자동 선택이 안 돼요.</li>
+<li><b>나이스 인증서 프로그램</b>이 설치되어 실행 중이어야 해요. 안 돌고 있으면 컴퓨터를 다시 켜 보세요.</li>
+<li><b>학교 업무망(랜선)</b>에서 쓰는 위젯입니다.</li>
+<li>인터넷 (설치할 때 필요한 프로그램을 받아요. 학교망이 막으면 휴대폰 테더링으로 한 번만 하세요)</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>② 설치 (한 번만, 5~15분)</h2>
+<div class="step"><div class="n">1</div><p>받은 압축 파일을 <b>마우스 오른쪽 → 모두 풀기</b>로 풉니다.<br><span style="color:#dc2626">풀지 않고 열면 안 돼요!</span></p></div>
+<div class="step"><div class="n">2</div><p>풀린 폴더에서 <b><code>install_widget.cmd</code></b>를 <b>더블클릭</b>합니다.<br>«게시자를 확인하지 못했습니다» 창이 뜨면 <b>[실행]</b>을 누르세요.<br>파란 «Windows의 PC 보호» 창이 뜨면 <b>추가 정보</b>를 누른 뒤 <b>[실행]</b>을 누르세요.</p></div>
+<div class="step"><div class="n">3</div><p>«업무 위젯을 설치하고 있어요» 작은 창이 뜹니다. <b>창을 닫지 말고 기다리세요.</b><br>멈춘 것처럼 보여도 정상이에요. (검은 터미널 창은 뜨지 않아요)</p></div>
+<div class="step"><div class="n">4</div><p>마지막에 <b>설정 창</b>이 뜹니다.
+<ul><li>지역을 고릅니다.</li><li>인증서 이름을 확인합니다 (자동으로 채워져요).</li><li><b>인증서 암호를 직접 입력</b>합니다. <b>글자가 하나도 안 보이는 게 정상</b>이에요.</li><li>출근·퇴근 시각을 넣고 <b>[저장하고 위젯 켜기]</b>를 누릅니다.</li></ul></p></div>
+<div class="ok">위젯이 뜨면 끝! 바탕화면에 «업무위젯»가 생겨요. 다음부터는 그걸 더블클릭하세요.</div>
+<div class="note">🔒 인증서 암호는 <b>선생님 PC(Windows 자격 증명 관리자)에만 저장</b>되고, 위젯 만든 사람이나 다른 서버로 <b>보내지 않아요</b>. 로그인할 때 인증서 창에 대신 입력하는 데만 씁니다.<br>인증서 이름·암호를 카카오톡·메신저로 주고받지 마세요. 인증서는 <b>본인 것만, 본인 컴퓨터에서</b> 쓰세요.</div>
+<div class="bad">클로드 앱 안에서 설치하지 마세요. 탐색기에서 더블클릭해서 설치해야 설정이 제대로 저장돼요.</div>
+</div>
+
+<div class="card">
+<h2>③ 처음 한 번 해 보기</h2>
+<div class="step"><div class="n">1</div><p>위젯의 <b>1. 업무포털</b>을 누릅니다.</p></div>
+<div class="step"><div class="n">2</div><p>크롬이 뜨고 <b>15~35초 뒤 업무포털 메인</b>이 보이면 성공이에요.</p></div>
+<div class="note">로그인 중에는 그 크롬 창을 만지지 마세요. 중간에 멈춰요.</div>
+<h2 style="margin-top:20px">🟢 초록색 크롬 = 업무용 크롬</h2>
+<p>위젯은 평소 쓰시는 크롬이 아니라 <b>위젯 전용 «업무용 크롬»</b>을 따로 띄워요. 창 위쪽이 <b>초록색</b>이고, 작업표시줄에 마우스를 올리면 <b>«업무용 크롬 (위젯)»</b>이라고 보여요.</p>
+<ul><li><b>업무포털·나이스·에듀파인</b>은 초록색 업무용 크롬에서 쓰세요.</li>
+<li>뉴스·유튜브 같은 <b>일반 인터넷</b>은 평소 크롬에서 쓰세요.</li>
+<li>평소 크롬을 쓰지 않는 이유: 크롬이 보안을 위해 평소 크롬은 프로그램이 조종하지 못하게 막아요. 그래서 따로 떼어 두는 편이 더 안전해요.</li>
+<li>즐겨찾기가 필요하면 업무용 크롬 오른쪽 위에서 <b>구글 계정으로 로그인</b>하면 평소 즐겨찾기가 그대로 들어와요. (안 해도 위젯은 잘 돼요)</li></ul>
+</div>
+
+<div class="card">
+<h2>④ 안 될 때</h2>
+<table>
+<tr><th style="width:38%">이럴 때</th><th>이렇게 하세요</th></tr>
+<tr><td>«암호를 넣었지만 로그인이 안 됐습니다»</td><td>암호가 틀렸을 수 있어요. 위젯 오른쪽 위 <b>⚙(톱니바퀴)</b>를 눌러 암호를 다시 저장한 뒤 누르세요.<br><b>틀린 채로 여러 번 누르면 인증서가 잠길 수 있어요.</b></td></tr>
+<tr><td>«먼저 오른쪽 클릭 → 인증서 설정»</td><td>위젯 오른쪽 위 <b>⚙(톱니바퀴)</b>를 눌러 설정을 다시 하세요. (오른쪽 클릭 → 인증서 설정도 같아요)</td></tr>
+<tr><td>로그인·인증서 창이 안 뜸</td><td>나이스 인증서 프로그램이 돌고 있는지 확인하고, 컴퓨터를 다시 켜 보세요.</td></tr>
+<tr><td>«중복로그인…» 문구</td><td>평소 쓰는 크롬에서 같은 계정을 로그아웃하고 다시 누르세요.</td></tr>
+<tr><td>학교 밖에서 안 열림</td><td>학교 업무망(랜선)에서 쓰세요.</td></tr>
+<tr><td>품의등록 단추가 에듀파인 첫 화면에서 멈춤</td><td>위젯 아래 문구를 적어서 알려 주세요. 크롬에서 왼쪽 위 «업무관리» 바를 눌러 «학교회계»를 고르고 사업담당 &gt; 품의/정산 &gt; 품의등록을 눌러도 같은 화면이에요.</td></tr>
+<tr><td>결재대기 칸이 <code>--</code></td><td>업무포털이 열려 있는지(1. 업무포털) 확인하세요. 칸을 누르면 이유가 보입니다.</td></tr>
+<tr><td>기관접수 칸이 <code>--</code></td><td>업무포털에 로그인돼 있어야 읽혀요. «1. 업무포털»을 누른 뒤 기관접수 칸을 한 번 눌러 보세요. 기관접수대기 숫자는 <b>대전에서만 시험</b>했어요.</td></tr>
+<tr><td>내부기안이 서식을 못 찾음</td><td>위젯에 뜨는 «비슷한 서식 이름»을 적어서 알려 주세요.</td></tr>
+<tr><td>위젯이 안 보임</td><td>바탕화면 «업무위젯»를 한 번 더 누르면 앞으로 나와요.</td></tr>
+<tr><td>설치 창에 «설치가 끝나지 않았어요»</td><td>창에 적힌 파일(<code>업무위젯_설치기록.txt</code>)을 알려 주신 분께 보내 주세요.</td></tr>
+</table>
+<p>위젯 아래쪽에 뜨는 <b>문구를 그대로</b> 적어 알려 주세요. 인증서 이름은 <code>***</code>로 가려져 있어서 그대로 적어도 돼요.</p>
+</div>
+
+<div class="card">
+<h2>⑤ 위젯 닫기·다시 열기</h2>
+<ul>
+<li>위젯 오른쪽 위 <b>✕</b>는 끄는 게 아니라 <b>시스템 트레이(작업표시줄 오른쪽 아래)</b>로 내려 보내요. 트레이의 «업무위젯» 아이콘을 <b>누르면</b> 다시 나와요. 안 보이면 <b>^</b> 모양을 눌러 «숨겨진 아이콘»을 펼쳐 보세요.</li>
+<li>트레이 아이콘을 <b>오른쪽 클릭</b>하면 «열기 / 윈도우 시작할 때 자동 실행 / 위젯 완전 종료»가 나와요.</li>
+<li>위젯 오른쪽 위 <b>⚙</b>에서도 «윈도우 시작할 때 자동 실행»을 켜고 끌 수 있어요.</li>
+<li><b>⚙ → 시계 카드 보이기</b>에서 월·일·요일·시·분·초 카드를 하나씩 켜고 끌 수 있어요. <b>모두 끄면 위젯 높이가 낮아져</b> 더 작게 쓸 수 있어요.</li>
+</ul>
+</div>
+
+<div class="card">
+<h2>⑥ 지우고 싶을 때</h2>
+<p>설치 묶음 폴더의 <b><code>uninstall_widget.cmd</code></b>를 더블클릭하고 <b>«예»</b>를 누르세요.</p>
+<ul><li>지워지는 것: 위젯, 바로가기, 저장된 인증서 설정·암호</li><li>그대로 남는 것: 평소 쓰는 크롬, 인증서 파일</li></ul>
+</div>
+
+<div class="card">
+<h2>알아 두세요</h2>
+<ul>
+<li>이 위젯은 공개된 «나이스 자동화 키트»(MIT 라이선스) 위에서 돌아갑니다. 정부 시스템을 브라우저 자동화로 움직이는 방식이라 <b>학교·교육청 지침에 어긋날 수 있어요.</b> 본인 계정·본인 인증서로 <b>본인 업무에만</b> 쓰세요.</li>
+<li>위젯이 열어 준 화면의 내용은 <b>눈으로 직접 확인</b>하세요. 위젯은 판단하지 않아요.</li>
+</ul>
+</div>
+
+</div></body></html>

@@ -1,0 +1,10 @@
+# 비밀값·개인 자료는 올리지 않는다 (서명 비밀 열쇠는 Windows 자격 증명 관리자에만 있다)
+*signing-key*
+*.key
+*.pem
+.env*
+.vercel/
+__pycache__/
+*.pyc
+# 화면 사진 자리가 남은 초안
+설치_한장안내.html
