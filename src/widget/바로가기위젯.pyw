@@ -645,7 +645,7 @@ class Widget:
             return
         self.upd_busy = True
         if manual:
-            self.say("⏳ 새 버전 확인 중…", "#4b5563")
+            self.upd_popup("🔄 업데이트 확인 중", "잠시만 기다려 주세요…", "#2563eb")
 
         def work():
             try:
@@ -660,21 +660,23 @@ class Widget:
         if err:
             K.log_line("업무위젯 업데이트 확인 실패: " + err)
             if manual:
-                self.say("⚠️ 업데이트 확인 실패: " + err)
+                self.upd_popup("⚠ 업데이트 확인 실패", "인터넷 연결을 확인해 주세요", "#dc2626", 5000)
             return
         if not m:
             if manual:
-                self.say("✅ 최신 버전이에요 (v%s)" % UPD.local_version(KIT), "#15803d")
+                self.upd_popup("✅ 최신 버전", "지금 v%s 를 쓰고 있어요" % UPD.local_version(KIT), "#15803d", 3000)
             return
-        self.apply_update(m)
+        self.apply_update(m, manual)
 
-    def apply_update(self, m):
+    def apply_update(self, m, manual=False):
         if self.busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 5분 뒤에
+            if manual:
+                self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 업데이트할게요" % m["version"], "#4b5563", 4000)
             self.root.after(5 * 60 * 1000, self.apply_update, m)
             return
         self.busy = "업데이트 중"
         self.upd_busy = True
-        self.say("⏳ 새 버전(v%s)으로 바꾸는 중…" % m["version"], "#4b5563")
+        self.upd_popup("⬇ 업데이트 중", "v%s 로 바꾸고 있어요 · 끝나면 위젯이 다시 켜져요" % m["version"], "#2563eb")
 
         def work():
             try:
@@ -683,22 +685,72 @@ class Widget:
             except Exception as e:
                 msg = (str(e).splitlines() or [type(e).__name__])[0][:80]
                 K.log_line("업무위젯 업데이트 실패: " + msg)
-                self.root.after(0, self.say, "⚠️ 업데이트 실패 (다음에 다시 해요): " + msg)
+                self.root.after(0, self.upd_popup, "⚠ 업데이트 실패", "지금 버전 그대로 써요 · 다음에 다시 해 볼게요", "#dc2626", 6000)
             finally:
                 self.busy = None
                 self.upd_busy = False
         threading.Thread(target=work, daemon=True).start()
 
     def relaunch(self):
-        """새 파일로 위젯을 다시 켠다 — 이 위젯이 끝난 뒤(한 개만 뜨기 표시가 풀린 뒤) 3초쯤 있다가 뜬다."""
-        pyw = K.PY.with_name("pythonw.exe")
-        cmd = 'cmd /c ping -n 4 127.0.0.1 >nul & start "" "%s" "%s"' % (pyw, HERE0 / "바로가기위젯.pyw")
-        base = 0x00000008 | 0x00000200
+        """새 파일로 위젯을 다시 켠다 — 이 위젯이 끝난 뒤(한 개만 뜨기 표시가 풀린 뒤) 3초쯤 있다가 뜬다.
+        창 없는 pythonw 가 기다렸다 켜므로 검은 명령 창이 뜨지 않는다."""
+        pyw = str(K.PY.with_name("pythonw.exe"))
+        code = ("import time,subprocess,sys;time.sleep(3);"
+                "subprocess.Popen([sys.argv[1],sys.argv[2]],cwd=sys.argv[3],creationflags=0x08000000|0x00000200)")
+        args = [pyw, "-c", code, pyw, str(HERE0 / "바로가기위젯.pyw"), str(HERE0)]
+        base = 0x08000000 | 0x00000200          # 창 없음 · 새 프로세스 그룹
         try:
-            subprocess.Popen(cmd, cwd=str(HERE0), creationflags=base | 0x01000000, close_fds=True)
+            subprocess.Popen(args, cwd=str(HERE0), creationflags=base | 0x01000000, close_fds=True)
         except OSError:
-            subprocess.Popen(cmd, cwd=str(HERE0), creationflags=base, close_fds=True)
+            subprocess.Popen(args, cwd=str(HERE0), creationflags=base, close_fds=True)
         self.quit()
+
+    def upd_popup(self, title, sub="", color="#2563eb", close_ms=None):
+        """위젯 위에 작은 업데이트 알림 창을 띄운다 (같은 창을 계속 바꿔 쓴다 · 누르면 닫힘)."""
+        try:
+            pop = getattr(self, "_upd_pop", None)
+            if pop is None or not pop.winfo_exists():
+                pop = tk.Toplevel(self.root)
+                pop.overrideredirect(True)
+                pop.attributes("-topmost", True)
+                pop.configure(bg=color)
+                inner = tk.Frame(pop, bg="#ffffff")
+                inner.pack(padx=2, pady=2)
+                pop._t = tk.Label(inner, bg="#ffffff", font=(FONT, 12, "bold"))
+                pop._t.pack(padx=22, pady=(14, 2))
+                pop._s = tk.Label(inner, bg="#ffffff", fg="#4b5563", font=(FONT, 9))
+                pop._s.pack(padx=22, pady=(0, 14))
+                for w in (pop, inner, pop._t, pop._s):
+                    w.bind("<Button-1>", lambda e: self.close_upd_popup())
+                self._upd_pop = pop
+            pop.configure(bg=color)
+            pop._t.configure(text=title, fg=color)
+            pop._s.configure(text=sub)
+            pop.update_idletasks()
+            w, h = pop.winfo_reqwidth(), pop.winfo_reqheight()
+            x = self.root.winfo_rootx() + (self.root.winfo_width() - w) // 2
+            y = self.root.winfo_rooty() + (self.root.winfo_height() - h) // 2
+            x, y = K.fit_on_screen(x, y, w, h)
+            pop.geometry("+%d+%d" % (x, y))
+            pop.deiconify()
+            pop.lift()
+            if getattr(self, "_upd_pop_after", None):
+                self.root.after_cancel(self._upd_pop_after)
+                self._upd_pop_after = None
+            if close_ms:
+                self._upd_pop_after = self.root.after(close_ms, self.close_upd_popup)
+        except Exception:
+            self.say(title + (" — " + sub if sub else ""), color)
+
+    def close_upd_popup(self):
+        self._upd_pop_after = None
+        pop = getattr(self, "_upd_pop", None)
+        if pop is not None:
+            try:
+                pop.destroy()
+            except Exception:
+                pass
+        self._upd_pop = None
 
     def update_loop(self):
         self.check_update()
@@ -901,7 +953,7 @@ class Widget:
             self.root.after(120_000, self.update_loop)
             v = UPD.just_updated(KIT)
             if v:
-                self.root.after(1500, lambda: self.say("✨ 새 버전(v%s)으로 바뀌었어요" % v, "#15803d"))
+                self.root.after(1500, lambda: self.upd_popup("🎉 업데이트 완료", "새 버전 v%s 로 바뀌었어요" % v, "#15803d", 5000))
         if not K.configured():
             self.root.after(800, lambda: self.say("오른쪽 클릭 → 인증서 설정부터 해 주세요", "#dc2626"))
         self.root.mainloop()
