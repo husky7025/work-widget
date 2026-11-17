@@ -370,8 +370,8 @@ class Widget:
             c.bind("<Leave>", lambda e, w=c: w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         sc = self.make_tile(grid, 1, 4, hand=True)
         self.sanctn_cv = sc
-        self.sanctn_num = sc.create_text(TILE // 2, 22, text="--", fill="#9ca3af", font=(FONT, 20, "bold"))
-        self.sanctn_lab = sc.create_text(TILE // 2, 46, text="결재대기", fill=WHITE, font=(FONT, 8, "bold"))
+        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#9ca3af", font=(FONT, 17, "bold"))
+        self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
         sc.bind("<Button-1>", lambda e: self.refresh_sanctn(manual=True))
         sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#f0fdf4"))
         sc.bind("<Leave>", lambda e: sc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
@@ -379,8 +379,8 @@ class Widget:
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
         jc = self.make_tile(grid, 1, 5, hand=True)
         self.jeopsu_cv = jc
-        self.jeopsu_num = jc.create_text(TILE // 2, 22, text="--", fill="#9ca3af", font=(FONT, 20, "bold"))
-        jc.create_text(TILE // 2, 46, text="기관접수", fill=WHITE, font=(FONT, 8, "bold"))
+        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#9ca3af", font=(FONT, 17, "bold"))
+        jc.create_text(TILE // 2, 44, text="교데통\n기관접수", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
         jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#0891b2", fill="#ecfeff"))
         jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
@@ -587,12 +587,12 @@ class Widget:
             wait, urgent = res
             color = "#dc2626" if urgent else ("#d97706" if wait else GREEN)
             self.sanctn_cv.itemconfigure(self.sanctn_num, text=str(wait), fill=color)
-            self.sanctn_cv.itemconfigure(self.sanctn_lab, text="긴급 %d" % urgent if urgent else "결재대기")
+            self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n" + ("긴급 %d" % urgent if urgent else "결재대기"))
             if manual:
                 self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#15803d")
         else:
             self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#9ca3af")
-            self.sanctn_cv.itemconfigure(self.sanctn_lab, text="결재대기")
+            self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n결재대기")
             if manual:
                 self.say("⚠️ " + reason, "#dc2626")
 
