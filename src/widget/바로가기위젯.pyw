@@ -41,11 +41,11 @@ UPDATE_HOUR = 10                         # 하루 한 번, 오전 10시에 새 �
 UPDATE_POLL_MS = 5 * 60 * 1000           # 10시가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
 SIZE_W, SIZE_H = 424, 190
 TILE, GAP, PAD = 60, 6, 12
-PANEL, TILE_BG, EDGE, GREEN, WHITE = "#f4f6fa", "#ffffff", "#e3e7ee", "#16a34a", "#111827"   # 밝은 테마: 판 / 타일 / 테두리 / 강조(초록) / 글자
+PANEL, TILE_BG, EDGE, GREEN, WHITE = "#f2f0eb", "#ffffff", "#e4e0d8", "#00754A", "#212121"   # 스타벅스 톤: 크림 판 / 타일 / 테두리 / 그린 / 글자
 FONT = "Malgun Gothic"
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
-ACCENT = {"portal": ("#2563eb", "#dbeafe", "#eff6ff"), "neis": ("#ea580c", "#ffedd5", "#fff7ed"),
-          "gian": ("#7c3aed", "#ede9fe", "#f5f3ff"), "pumui": ("#0d9488", "#ccfbf1", "#f0fdfa")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
+ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
+          "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
 
 JOBS = {
     "portal": ("open_portal.py", "업무포털 메인 화면을 열었습니다", "✅ 업무포털 메인 화면을 열었습니다"),
@@ -210,7 +210,7 @@ except Exception:
 class FlipCard:
     """숫자 카드. 값이 바뀌면 윗조각이 접혀 내려오고 아랫조각이 펼쳐지는 모양으로 넘어간다."""
     W, H, SS = 46, 32, 4
-    TOP, BOTTOM, LINE = "#f3f5f9", "#e8ecf3", "#c9d1dd"
+    TOP, BOTTOM, LINE = "#faf8f4", "#efece5", "#d6d1c6"
     FRAMES = 6
     DELAY = 32
 
@@ -303,7 +303,7 @@ class Widget:
         self.root.geometry("%dx%d+%d+%d" % (SIZE_W, SIZE_H, x, y))
         self.bgc = tk.Canvas(self.root, width=SIZE_W, height=SIZE_H, bg=KEY, highlightthickness=0)
         self.bgc.place(x=0, y=0)
-        round_rect(self.bgc, 1, 1, SIZE_W - 2, SIZE_H - 2, 20, fill=PANEL, outline="#d9dee7", width=1)
+        round_rect(self.bgc, 1, 1, SIZE_W - 2, SIZE_H - 2, 16, fill=PANEL, outline="#d6d1c6", width=1)
         tk.Misc.lower(self.bgc)
         self.busy = None
         self.lock = threading.Lock()
@@ -317,12 +317,12 @@ class Widget:
         # 위쪽 줄: 📍(항상 위) ⚙(환경설정) ✕(닫기)
         bar = tk.Frame(self.root, bg=PANEL)
         bar.pack(fill="x", padx=PAD - 4, pady=(8, 0))
-        self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b7280", font=(FONT, 9, "bold"))
+        self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=(FONT, 9, "bold"))
         self.title_lb.pack(side="left", padx=(10, 0))
         for text, cmd, tip in (("✕", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
                                ("⚙", self.show_options, "환경설정"),
                                ("📍", self.toggle_pin, "항상 위 켜기/끄기")):
-            b = tk.Label(bar, text=text, bg=PANEL, fg="#4b5563", font=(FONT, 10), cursor="hand2", padx=5)
+            b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=(FONT, 10), cursor="hand2", padx=5)
             b.pack(side="right")
             b.bind("<Button-1>", lambda e, c=cmd: c())
             if text == "📍":
@@ -348,13 +348,13 @@ class Widget:
             label = CLOCK_LABEL[key]
             c.create_text(TILE // 2, 47, text=label, fill=GREEN, font=(FONT, 7, "bold"))
             if key == "ss":
-                c.itemconfigure("edge", fill="#f0fdf4", outline="#bbf7d0")
+                c.itemconfigure("edge", fill="#eef6f2", outline="#a9cdbf")
             if HAVE_FLIP:
                 num = None
-                self.cards[key] = FlipCard(c, TILE // 2, 24, "#f0fdf4" if key == "ss" else TILE_BG,
+                self.cards[key] = FlipCard(c, TILE // 2, 24, "#eef6f2" if key == "ss" else TILE_BG,
                                            GREEN if key == "ss" else WHITE,
-                                           top="#dcfce7" if key == "ss" else None, bottom="#c7f0d5" if key == "ss" else None,
-                                           line="#9fd8b4" if key == "ss" else None)
+                                           top="#e3f0ea" if key == "ss" else None, bottom="#d4e9e2" if key == "ss" else None,
+                                           line="#a9cdbf" if key == "ss" else None)
             else:
                 num = c.create_text(TILE // 2, 26, text="--", fill=GREEN if key == "ss" else WHITE, font=(FONT, 18, "bold"))
             self.clock[key] = (c, num)
@@ -371,24 +371,24 @@ class Widget:
             c.bind("<Leave>", lambda e, w=c: w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         sc = self.make_tile(grid, 1, 4, hand=True)
         self.sanctn_cv = sc
-        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#9ca3af", font=(FONT, 17, "bold"))
+        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=(FONT, 17, "bold"))
         self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
         sc.bind("<Button-1>", lambda e: self.refresh_sanctn(manual=True))
-        sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#f0fdf4"))
+        sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#eef6f2"))
         sc.bind("<Leave>", lambda e: sc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.sanctn_busy = False
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
         jc = self.make_tile(grid, 1, 5, hand=True)
         self.jeopsu_cv = jc
-        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#9ca3af", font=(FONT, 17, "bold"))
+        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=(FONT, 17, "bold"))
         jc.create_text(TILE // 2, 44, text="교데통\n기관접수", fill=WHITE, font=(FONT, 8, "bold"), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
-        jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#0891b2", fill="#ecfeff"))
+        jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#2b5148", fill="#eef6f2"))
         jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.jeopsu_busy = False
         self.opa_var = tk.IntVar(value=int(round(self.opacity * 10) * 10))
 
-        self.status = tk.Label(self.root, text="", bg=PANEL, fg="#dc2626", font=(FONT, 8), anchor="w")
+        self.status = tk.Label(self.root, text="", bg=PANEL, fg="#c82014", font=(FONT, 8), anchor="w")
         self.status.pack(fill="x", padx=PAD + 2, pady=(6, 0))
         for w in (self.root, self.bgc, bar, self.title_lb, grid, self.status):
             self.bind_drag(w)
@@ -443,7 +443,7 @@ class Widget:
         self.root.geometry("%dx%d" % (SIZE_W, h))
         self.bgc.configure(height=h)
         self.bgc.delete("all")
-        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, 20, fill=PANEL, outline="#d9dee7", width=1)
+        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, 16, fill=PANEL, outline="#d6d1c6", width=1)
         if save:
             try:
                 K.save_state(clock_cards=on)
@@ -455,7 +455,7 @@ class Widget:
     def make_tile(self, parent, r, c, hand=False):
         cv = tk.Canvas(parent, width=TILE, height=TILE, bg=PANEL, highlightthickness=0, cursor="hand2" if hand else "")
         cv.grid(row=r, column=c, padx=GAP // 2, pady=GAP // 2)
-        round_rect(cv, 2, 2, TILE - 2, TILE - 2, 13, fill=TILE_BG, outline=EDGE, width=1, tags="edge")
+        round_rect(cv, 2, 2, TILE - 2, TILE - 2, 12, fill=TILE_BG, outline=EDGE, width=1, tags="edge")
         if not hand:
             self.bind_drag(cv)
         self.tiles.append(cv)
@@ -498,22 +498,22 @@ class Widget:
         self._opa_save = self.root.after(400, lambda: K.save_state(opacity=self.opacity))
 
     # ── 단추 ──
-    def say(self, text, color="#dc2626"):
+    def say(self, text, color="#c82014"):
         self.status.configure(text=text, fg=color)
 
     def click(self, kind):
         if self.busy:
-            self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#dc2626")
+            self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#c82014")
             return
         script, done, done_msg = JOBS[kind]
         if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not (KIT / script).exists():
             self.say("키트 파일을 찾지 못했습니다 (%s) — 업무위젯 설치를 다시 실행하세요" % script)
             return
         if not K.configured():
-            self.say("먼저 오른쪽 클릭 → 인증서 설정", "#dc2626")
+            self.say("먼저 오른쪽 클릭 → 인증서 설정", "#c82014")
             return
         self.busy = "로그인 중"
-        self.say("⏳ 로그인 중… (크롬 창이 뜹니다)", "#4b5563")
+        self.say("⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
         threading.Thread(target=self.run_job, args=(script, done, done_msg), daemon=True).start()
 
     def run_job(self, script, done, done_msg):
@@ -532,16 +532,16 @@ class Widget:
                         self.root.after(0, self.show_jeopsu, int(line[7:].strip()), "", False)
                     if done in line:
                         ok = True
-                        self.root.after(0, self.say, done_msg, "#15803d")
+                        self.root.after(0, self.say, done_msg, "#00754A")
                     elif line.startswith(("⏸", "❌")):
                         # 작은따옴표 안(인증서 이름 등)은 가린다
                         last = re.sub(r"'[^']*'", "'***'", re.sub(r"^[⏸❌]\s*", "", line))[:110]
-                        self.root.after(0, self.say, "⚠️ " + last, "#dc2626")
+                        self.root.after(0, self.say, "⚠️ " + last, "#c82014")
                 p.wait()
             if p.returncode != 0 and not ok:
-                self.root.after(0, self.say, "❌ 열지 못했습니다: " + (last or "원인 출력 없음"), "#dc2626")
+                self.root.after(0, self.say, "❌ 열지 못했습니다: " + (last or "원인 출력 없음"), "#c82014")
         except Exception as e:
-            self.root.after(0, self.say, "❌ 실행하지 못했습니다: " + type(e).__name__, "#dc2626")
+            self.root.after(0, self.say, "❌ 실행하지 못했습니다: " + type(e).__name__, "#c82014")
         finally:
             self.busy = None
             K.log_line("업무위젯 %s %.1fs %s" % (script, time.time() - t0, "ok" if ok else "FAIL " + last))
@@ -550,7 +550,7 @@ class Widget:
     def refresh_sanctn(self, manual=False):
         if self.sanctn_busy or self.busy:              # 로그인·화면 열기 작업 중에는 포털 탭을 새로고침하지 않는다
             if manual:
-                self.say("다른 작업이 끝난 뒤 다시 눌러 주세요", "#dc2626")
+                self.say("다른 작업이 끝난 뒤 다시 눌러 주세요", "#c82014")
             return
         script = KIT / "check_sanctn.py"
         if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not script.exists():
@@ -560,7 +560,7 @@ class Widget:
         if not K.configured():
             return
         self.sanctn_busy = True
-        self.sanctn_cv.itemconfigure(self.sanctn_num, fill="#9ca3af")
+        self.sanctn_cv.itemconfigure(self.sanctn_num, fill="#a8a49b")
         threading.Thread(target=self.run_sanctn, args=(script, manual), daemon=True).start()
 
     def run_sanctn(self, script, manual):
@@ -586,16 +586,16 @@ class Widget:
         hm = datetime.now().strftime("%H:%M")
         if res:
             wait, urgent = res
-            color = "#dc2626" if urgent else ("#d97706" if wait else GREEN)
+            color = "#c82014" if urgent else ("#b7791f" if wait else GREEN)
             self.sanctn_cv.itemconfigure(self.sanctn_num, text=str(wait), fill=color)
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n" + ("긴급 %d" % urgent if urgent else "결재대기"))
             if manual:
-                self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#15803d")
+                self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#00754A")
         else:
-            self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#9ca3af")
+            self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#a8a49b")
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n결재대기")
             if manual:
-                self.say("⚠️ " + reason, "#dc2626")
+                self.say("⚠️ " + reason, "#c82014")
 
     def sanctn_loop(self):
         self.refresh_sanctn()
@@ -609,7 +609,7 @@ class Widget:
         if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not script.exists() or not K.configured():
             return
         self.jeopsu_busy = True
-        self.jeopsu_cv.itemconfigure(self.jeopsu_num, fill="#9ca3af")
+        self.jeopsu_cv.itemconfigure(self.jeopsu_num, fill="#a8a49b")
         threading.Thread(target=self.run_jeopsu, args=(script,), daemon=True).start()
 
     def run_jeopsu(self, script):
@@ -633,9 +633,9 @@ class Widget:
         if from_check:
             self.jeopsu_busy = False
         if res is not None:
-            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text=str(res), fill="#0891b2" if res else GREEN)
+            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text=str(res), fill="#2b5148" if res else GREEN)
         elif from_check:
-            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text="--", fill="#9ca3af")
+            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text="--", fill="#a8a49b")
             K.log_line("업무위젯 기관접수대기 못 읽음: " + reason)
 
     # ── 자동 업데이트 (work_widget_update.py: 서명 확인 → 받기 → 덮어쓰기 → 위젯 다시 켜기) ──
@@ -646,7 +646,7 @@ class Widget:
             return
         self.upd_busy = True
         if manual:
-            self.upd_popup("🔄 업데이트 확인 중", "잠시만 기다려 주세요…", "#2563eb")
+            self.upd_popup("🔄 업데이트 확인 중", "잠시만 기다려 주세요…", "#00754A")
 
         def work():
             try:
@@ -661,32 +661,32 @@ class Widget:
         if err:
             K.log_line("업무위젯 업데이트 확인 실패: " + err)
             if manual:
-                self.upd_popup("⚠ 업데이트 확인 실패", "인터넷 연결을 확인해 주세요", "#dc2626", 5000)
+                self.upd_popup("⚠ 업데이트 확인 실패", "인터넷 연결을 확인해 주세요", "#c82014", 5000)
             return
         if not m:
             if manual:
-                self.upd_popup("✅ 최신 버전", "지금 v%s 를 쓰고 있어요" % UPD.local_version(KIT), "#15803d", 3000)
+                self.upd_popup("✅ 최신 버전", "지금 v%s 를 쓰고 있어요" % UPD.local_version(KIT), "#00754A", 3000)
             return
         self.apply_update(m, manual)
 
     def apply_update(self, m, manual=False):
         if self.busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 5분 뒤에
             if manual:
-                self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 업데이트할게요" % m["version"], "#4b5563", 4000)
+                self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 업데이트할게요" % m["version"], "#5c5c5c", 4000)
             self.root.after(5 * 60 * 1000, self.apply_update, m)
             return
         self.busy = "업데이트 중"
         self.upd_busy = True
-        self.upd_popup("⬇ 업데이트 중", "v%s 로 바꾸고 있어요 · 끝나면 위젯이 다시 켜져요" % m["version"], "#2563eb")
+        self.upd_popup("⬇ 업데이트 중", "v%s 로 바꾸고 있어요 · 끝나면 위젯이 다시 켜져요" % m["version"], "#00754A")
 
         def work():
             try:
-                UPD.apply(KIT, m, lambda s: self.root.after(0, self.say, "⏳ " + s + "…", "#4b5563"))
+                UPD.apply(KIT, m, lambda s: self.root.after(0, self.say, "⏳ " + s + "…", "#5c5c5c"))
                 self.root.after(0, self.relaunch)
             except Exception as e:
                 msg = (str(e).splitlines() or [type(e).__name__])[0][:80]
                 K.log_line("업무위젯 업데이트 실패: " + msg)
-                self.root.after(0, self.upd_popup, "⚠ 업데이트 실패", "지금 버전 그대로 써요 · 다음에 다시 해 볼게요", "#dc2626", 6000)
+                self.root.after(0, self.upd_popup, "⚠ 업데이트 실패", "지금 버전 그대로 써요 · 다음에 다시 해 볼게요", "#c82014", 6000)
             finally:
                 self.busy = None
                 self.upd_busy = False
@@ -706,7 +706,7 @@ class Widget:
             subprocess.Popen(args, cwd=str(HERE0), creationflags=base, close_fds=True)
         self.quit()
 
-    def upd_popup(self, title, sub="", color="#2563eb", close_ms=None):
+    def upd_popup(self, title, sub="", color="#00754A", close_ms=None):
         """위젯 위에 작은 업데이트 알림 창을 띄운다 (같은 창을 계속 바꿔 쓴다 · 누르면 닫힘)."""
         try:
             pop = getattr(self, "_upd_pop", None)
@@ -719,7 +719,7 @@ class Widget:
                 inner.pack(padx=2, pady=2)
                 pop._t = tk.Label(inner, bg="#ffffff", font=(FONT, 12, "bold"))
                 pop._t.pack(padx=22, pady=(14, 2))
-                pop._s = tk.Label(inner, bg="#ffffff", fg="#4b5563", font=(FONT, 9))
+                pop._s = tk.Label(inner, bg="#ffffff", fg="#5c5c5c", font=(FONT, 9))
                 pop._s.pack(padx=22, pady=(0, 14))
                 for w in (pop, inner, pop._t, pop._s):
                     w.bind("<Button-1>", lambda e: self.close_upd_popup())
@@ -799,11 +799,11 @@ class Widget:
     def toggle_pin(self):
         self.pinned = not self.pinned
         self.root.attributes("-topmost", self.pinned)
-        self.pin_label.configure(fg="#4b5563" if self.pinned else "#b3bac4")
+        self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
 
     def open_setup(self):
         subprocess.Popen([str(K.PY.with_name("pythonw.exe")), str(K.HERE / "바로가기_설정창.pyw")], cwd=str(K.HERE), env=K.ENV)
-        self.say("설정 창에서 마쳐 주세요", "#4b5563")
+        self.say("설정 창에서 마쳐 주세요", "#5c5c5c")
 
     # ── 시스템 트레이로 내리기 / 되살리기 ──
     def minimize(self):
@@ -812,7 +812,7 @@ class Widget:
             return
         self.save_pos()
         if not self.tray.add():
-            self.say("트레이 아이콘을 만들지 못했어요", "#dc2626")
+            self.say("트레이 아이콘을 만들지 못했어요", "#c82014")
             return
         self.mini = True
         self.root.withdraw()
@@ -910,15 +910,15 @@ class Widget:
             if self.auto_var.get():
                 self.make_lnk(d / self.LNK_NAME)
                 (d / self.OLD_LNK).unlink(missing_ok=True)
-                self.say("윈도우를 켜면 위젯이 자동으로 떠요", "#15803d")
+                self.say("윈도우를 켜면 위젯이 자동으로 떠요", "#00754A")
             else:
                 (d / self.LNK_NAME).unlink(missing_ok=True)
                 (d / self.OLD_LNK).unlink(missing_ok=True)
-                self.say("자동 실행을 껐어요", "#4b5563")
+                self.say("자동 실행을 껐어요", "#5c5c5c")
         except Exception as e:
             K.log_line("업무위젯 자동실행 설정 오류 %r" % e)
             self.auto_var.set(self.autostart_on())
-            self.say("자동 실행을 바꾸지 못했어요", "#dc2626")
+            self.say("자동 실행을 바꾸지 못했어요", "#c82014")
         self.auto_cache = self.auto_var.get()
 
     def quit(self):
@@ -946,7 +946,7 @@ class Widget:
         if self.ev_show and k.WaitForSingleObject(K.wt.HANDLE(self.ev_show), 0) == 0:
             self.restore()
             self.keep_visible(raise_=True)
-            self.say("여기 있어요!", "#15803d")
+            self.say("여기 있어요!", "#00754A")
             k.SetEvent(K.wt.HANDLE(self.ev_ack))
         self.ticks += 1
         if self.ticks % K.GUARD_EVERY == 0 and not self.dragging:
@@ -965,9 +965,9 @@ class Widget:
             self.root.after(120_000, self.update_loop)
             v = UPD.just_updated(KIT)
             if v:
-                self.root.after(1500, lambda: self.upd_popup("🎉 업데이트 완료", "새 버전 v%s 로 바뀌었어요" % v, "#15803d", 5000))
+                self.root.after(1500, lambda: self.upd_popup("🎉 업데이트 완료", "새 버전 v%s 로 바뀌었어요" % v, "#00754A", 5000))
         if not K.configured():
-            self.root.after(800, lambda: self.say("오른쪽 클릭 → 인증서 설정부터 해 주세요", "#dc2626"))
+            self.root.after(800, lambda: self.say("오른쪽 클릭 → 인증서 설정부터 해 주세요", "#c82014"))
         self.root.mainloop()
 
 
