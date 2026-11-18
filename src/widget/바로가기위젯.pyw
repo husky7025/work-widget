@@ -516,6 +516,9 @@ class Widget:
         self.status.configure(text=text, fg=color)
 
     def click(self, kind):
+        if self.sanctn_busy or self.jeopsu_busy:        # 건수 자동 조회가 같은 포털 탭을 쓰는 중이면 끝난 뒤에
+            self.say("건수를 읽는 중이에요 — 잠시 뒤 다시 눌러 주세요", "#c82014")
+            return
         if self.busy:
             self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#c82014")
             return
@@ -677,6 +680,7 @@ class Widget:
             if manual:
                 self.upd_popup("⚠ 업데이트 확인 실패", "인터넷 연결을 확인해 주세요", "#c82014", 5000)
             return
+        K.save_state(update_checked=datetime.now().strftime("%Y-%m-%d"))
         if not m:
             if manual:
                 self.upd_popup("✅ 최신 버전", "지금 v%s 를 쓰고 있어요" % UPD.local_version(KIT), "#00754A", 3000)
@@ -777,8 +781,7 @@ class Widget:
     def update_loop(self):
         try:
             if self.update_due() and not self.upd_busy:
-                K.save_state(update_checked=datetime.now().strftime("%Y-%m-%d"))
-                self.check_update()
+                self.check_update()               # 날짜는 확인에 성공했을 때(got_update)만 기록 → 실패하면 다음 점검 때 다시 시도
         finally:
             self.root.after(UPDATE_POLL_MS, self.update_loop)
 

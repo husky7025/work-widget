@@ -88,7 +88,15 @@ def main():
             page.wait_for_timeout(800)
         page.locator('div[id$="btnMenu_A00AAB01:icontext"]').first.click()        # 상단 «문서관리»
         page.wait_for_timeout(1500)
-        b = page.locator('div[id$="grdMega_A00AAB0101.body.gridrow_0.cell_0_0"]').first.bounding_box()
+        cell = page.locator('div[id$="grdMega_A00AAB0101.body.gridrow_0.cell_0_0"]').first
+        b = None
+        for _ in range(20):                                                       # 메가메뉴가 늦게 떠도 최대 10초 기다린다
+            b = cell.bounding_box()
+            if b:
+                break
+            page.wait_for_timeout(500)
+        if not b:
+            raise Stop("«문서관리» 메뉴가 10초 안에 안 열렸습니다")
         page.mouse.click(b["x"] + b["width"] / 2, b["y"] + b["height"] / 2)
         f = None
         for _ in range(30):

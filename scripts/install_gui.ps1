@@ -36,26 +36,35 @@ $bar = New-Object Windows.Forms.PictureBox; $bar.Location = "22,56"; $bar.Size =
 $pct = New-Object Windows.Forms.Label; $pct.Location = "408,56"; $pct.Size = "50,26"; $pct.TextAlign = "MiddleRight"
 $pct.Font = New-Object Drawing.Font("Malgun Gothic", 11, [Drawing.FontStyle]::Bold); $pct.ForeColor = [Drawing.Color]::FromArgb(22, 163, 74); $pct.Text = "0%"
 $script:val = 0.0; $script:shine = 0; $script:barColor = [Drawing.Color]::FromArgb(22, 163, 74)
+$script:brBack = New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(229, 231, 235))
+$script:penBorder = New-Object Drawing.Pen ([Drawing.Color]::FromArgb(209, 213, 219))
+$script:brBar = $null; $script:brBarColor = $null
 $bar.Add_Paint({
   param($sender, $e)
   $g = $e.Graphics; $g.SmoothingMode = "AntiAlias"
   $w = $sender.Width; $h = $sender.Height
-  $g.FillRectangle((New-Object Drawing.SolidBrush ([Drawing.Color]::FromArgb(229, 231, 235))), 0, 0, $w, $h)
+  $g.FillRectangle($script:brBack, 0, 0, $w, $h)
   $fw = [int]([Math]::Round($w * $script:val / 100.0))
   if ($fw -gt 0) {
-    $g.FillRectangle((New-Object Drawing.SolidBrush $script:barColor), 0, 0, $fw, $h)
+    if ($script:brBarColor -ne $script:barColor) {          # 막대 색이 바뀔 때만 새로 만든다 (GDI 핸들 누적 방지)
+      if ($script:brBar) { $script:brBar.Dispose() }
+      $script:brBar = New-Object Drawing.SolidBrush $script:barColor; $script:brBarColor = $script:barColor
+    }
+    $g.FillRectangle($script:brBar, 0, 0, $fw, $h)
     if (-not $script:done) {
       $x = ($script:shine % ($fw + 60)) - 60
       $rect = New-Object Drawing.Rectangle($x, 0, 60, $h)
       $lg = New-Object Drawing.Drawing2D.LinearGradientBrush($rect, [Drawing.Color]::FromArgb(0, 255, 255, 255), [Drawing.Color]::FromArgb(0, 255, 255, 255), 0.0)
-      $cb = New-Object Drawing.Drawing2D.ColorBlend(3)
-      $cb.Colors = @([Drawing.Color]::FromArgb(0, 255, 255, 255), [Drawing.Color]::FromArgb(110, 255, 255, 255), [Drawing.Color]::FromArgb(0, 255, 255, 255))
-      $cb.Positions = @(0.0, 0.5, 1.0); $lg.InterpolationColors = $cb
-      $g.SetClip((New-Object Drawing.Rectangle(0, 0, $fw, $h)))
-      $g.FillRectangle($lg, $rect); $g.ResetClip()
+      try {
+        $cb = New-Object Drawing.Drawing2D.ColorBlend(3)
+        $cb.Colors = @([Drawing.Color]::FromArgb(0, 255, 255, 255), [Drawing.Color]::FromArgb(110, 255, 255, 255), [Drawing.Color]::FromArgb(0, 255, 255, 255))
+        $cb.Positions = @(0.0, 0.5, 1.0); $lg.InterpolationColors = $cb
+        $g.SetClip((New-Object Drawing.Rectangle(0, 0, $fw, $h)))
+        $g.FillRectangle($lg, $rect); $g.ResetClip()
+      } finally { $lg.Dispose() }
     }
   }
-  $g.DrawRectangle((New-Object Drawing.Pen ([Drawing.Color]::FromArgb(209, 213, 219))), 0, 0, $w - 1, $h - 1)
+  $g.DrawRectangle($script:penBorder, 0, 0, $w - 1, $h - 1)
 })
 
 $s = New-Object Windows.Forms.Label; $s.Location = "22,92"; $s.Size = "430,44"; $s.Text = "준비하는 중..."
@@ -72,11 +81,12 @@ $n = New-Object Windows.Forms.Label; $n.Location = "22,342"; $n.Size = "430,50";
 $n.Text = "보통 5~15분 걸려요. 게이지가 천천히 움직여도 정상이니`n이 창을 닫지 말고 기다려 주세요."
 $f.Controls.AddRange(@($t, $bar, $pct, $s, $el, $n) + $rowLabels)
 
+$script:fontBold = New-Object Drawing.Font("Malgun Gothic", 10, [Drawing.FontStyle]::Bold)
 function Set-Rows($cur, $allDone) {
   for ($i = 0; $i -lt $rowLabels.Count; $i++) {
     $l = $rowLabels[$i]
     if ($allDone -or $i -lt $cur) { $l.Text = "✔  " + $rows[$i]; $l.ForeColor = [Drawing.Color]::FromArgb(22, 163, 74); $l.Font = $ui }
-    elseif ($i -eq $cur) { $l.Text = "▶  " + $rows[$i] + " ..."; $l.ForeColor = [Drawing.Color]::FromArgb(17, 24, 39); $l.Font = New-Object Drawing.Font("Malgun Gothic", 10, [Drawing.FontStyle]::Bold) }
+    elseif ($i -eq $cur) { $l.Text = "▶  " + $rows[$i] + " ..."; $l.ForeColor = [Drawing.Color]::FromArgb(17, 24, 39); $l.Font = $script:fontBold }
     else { $l.Text = "○  " + $rows[$i]; $l.ForeColor = [Drawing.Color]::FromArgb(156, 163, 175); $l.Font = $ui }
   }
 }
@@ -148,5 +158,5 @@ $tm.Add_Tick({
   }
 })
 $tm.Start()
-$f.Add_FormClosing({ if (-not $script:done) { $r = [Windows.Forms.MessageBox]::Show("설치가 아직 끝나지 않았어요. 정말 닫을까요?", "업무 위젯 설치", "YesNo", "Question"); if ($r -ne "Yes") { $_.Cancel = $true } } })
+$f.Add_FormClosing({ if (-not $script:done) { $r = [Windows.Forms.MessageBox]::Show("설치가 아직 끝나지 않았어요. 정말 닫을까요?", "업무 위젯 설치", "YesNo", "Question"); if ($r -ne "Yes") { $_.Cancel = $true } else { try { if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force -ErrorAction SilentlyContinue } } catch {} } } })
 [void]$f.ShowDialog()
