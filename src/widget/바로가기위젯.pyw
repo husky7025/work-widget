@@ -408,8 +408,9 @@ class Widget:
         self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
         sc.bind("<Button-1>", lambda e: self.click("sanctn"))                 # 눌러서 결재대기함 열기
         sc.bind("<Button-3>", lambda e: (self.refresh_sanctn(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
-        sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#eef6f2"))
-        sc.bind("<Leave>", lambda e: sc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
+        self.sanctn_look = (TILE_BG, EDGE, 1, False)           # (바탕, 테두리, 테두리 굵기, 알림 중?) — 결재대기가 있으면 눈에 띄게 바뀐다
+        sc.bind("<Enter>", lambda e: self.paint_sanctn(hover=True))
+        sc.bind("<Leave>", lambda e: self.paint_sanctn())
         self.sanctn_busy = False
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
         jc = self.make_tile(grid, 1, 5, hand=True)
@@ -635,14 +636,31 @@ class Widget:
             color = "#c82014" if urgent else ("#b7791f" if wait else GREEN)
             self.sanctn_cv.itemconfigure(self.sanctn_num, text=str(wait), fill=color)
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n" + ("긴급 %d" % urgent if urgent else "결재대기"))
+            # 결재대기가 있으면 칸 바탕·테두리에 색을 넣는다 (긴급 = 붉은 음영, 일반 = 노란 음영)
+            if urgent:
+                self.sanctn_look = ("#fde3df", "#c82014", 2, True)
+            elif wait:
+                self.sanctn_look = ("#fff0c2", "#e0a526", 2, True)
+            else:
+                self.sanctn_look = (TILE_BG, EDGE, 1, False)
+            self.paint_sanctn()
             if manual:
                 self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#00754A")
             self.notify_sanctn(wait, urgent)
         else:
+            self.sanctn_look = (TILE_BG, EDGE, 1, False)           # 못 읽었을 땐 색을 빼서 «0건» 으로 오해하지 않게
+            self.paint_sanctn()
             self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#a8a49b")
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n결재대기")
             if manual:
                 self.say("⚠️ " + reason, "#c82014")
+
+    def paint_sanctn(self, hover=False):
+        """결재대기 칸 색칠. 평소엔 sanctn_look · 마우스를 올리면 알림 중엔 같은 색을 조금 진하게, 아니면 기존 초록."""
+        fill, outline, width, alert = self.sanctn_look
+        if hover:
+            fill, outline, width = (("#fbd2cc" if fill == "#fde3df" else "#ffe69a"), outline, 3) if alert else ("#eef6f2", GREEN, 1)
+        self.sanctn_cv.itemconfigure("edge", fill=fill, outline=outline, width=width)
 
     def notify_sanctn(self, wait, urgent):
         """결재대기·긴급이 지난번보다 «늘었을 때만» 윈도우 알림을 띄운다 (처음 읽을 때는 기준만 저장 · 줄거나 같으면 조용히)."""
