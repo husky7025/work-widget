@@ -78,6 +78,16 @@ PATCHES = {
         ('% (end_default, c.get("work_start") or "08:40")', '% (end_default, c.get("work_start") or "08:00")'),
         ('v_start.set(c.get("work_start") or "08:40")', 'v_start.set(c.get("work_start") or "08:00")'),
     ],
+    # 위젯은 설치된 정식 크롬에 CDP 로만 붙으므로 playwright 내장 크롬(약 300MB)을 받지 않는다 (-Widget 일 때만 · 키트 단독 설치는 그대로)
+    # 안내 문구에 «브라우저 제어 도구» 를 남겨 둔다 — 설치 창(install_gui.ps1)이 이 글자로 단계를 넘긴다
+    "setup.ps1": [
+        ('Write-Host "[4/4] 브라우저 제어 도구 설치 중..."\n',
+         'Write-Host "[4/4] 브라우저 제어 도구 설치 중..."\nif ($Widget) {\n'
+         '    Write-Host "  설치된 크롬을 쓰므로 내장 크롬(약 300MB)은 받지 않습니다." -ForegroundColor Green\n'
+         '} else {\n'),
+        ('if ($LASTEXITCODE -ne 0) { Stop-Failed "브라우저 제어 도구 설치" }\nWrite-Host "  OK" -ForegroundColor Green\n',
+         'if ($LASTEXITCODE -ne 0) { Stop-Failed "브라우저 제어 도구 설치" }\n}\nWrite-Host "  OK" -ForegroundColor Green\n'),
+    ],
     # 위젯용 크롬을 평소 크롬과 한눈에 구별되게 — 초록색 테마 + 작업표시줄 창 이름 «업무용 크롬 (위젯)»
     # (평소 크롬은 원격 조종을 막으므로 위젯은 따로 된 크롬을 쓴다. 색은 선생님이 직접 바꾼 적이 없을 때만 넣는다)
     "widget/바로가기_엔진.py": [
