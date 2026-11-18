@@ -67,6 +67,7 @@ JOBS = {
     "gian":   ("open_gian.py", "내부기안 창을 열었습니다", "✅ 내부기안 창을 열었습니다 (작성·저장·상신은 안 함)"),
     "pumui":  ("open_pumui.py", "품의등록 화면을 열었습니다", "✅ 품의등록 화면을 열었습니다 (입력·저장·결재요청은 안 함)"),
     "jeopsu": ("open_jeopsu.py", "기관접수대기 화면을 열었습니다", "✅ 기관접수대기 화면을 열었습니다 (접수·제출은 안 함)"),
+    "sanctn": ("open_sanctn.py", "결재대기함을 열었습니다", "✅ 결재대기함을 열었습니다 (결재·반려는 안 함)"),
 }
 BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스"), ("gian", "📝", "3. 내부기안"), ("pumui", "🧾", "4. 품의등록")]
 CLOCK_KEYS = ("mo", "dd", "wk", "hh", "mi", "ss")
@@ -173,6 +174,21 @@ class Tray:
             self.added = bool(_shell32.Shell_NotifyIconW(0, ctypes.byref(self._data())))   # NIM_ADD
         return self.added
 
+    def balloon(self, title, text, warn=False):
+        """트레이 풍선 알림(윈도우 알림). 아이콘이 없으면 잠깐 달고 True 를 돌려준다(→ 부른 쪽이 나중에 떼어 준다)."""
+        if not self.hwnd:
+            return False
+        temp = not self.added
+        if temp and not self.add():
+            return False
+        nid = self._data()
+        nid.uFlags |= 0x10                                  # NIF_INFO
+        nid.szInfoTitle = title[:60]
+        nid.szInfo = text[:250]
+        nid.dwInfoFlags = 0x2 if warn else 0x1              # NIIF_WARNING / NIIF_INFO
+        _shell32.Shell_NotifyIconW(1, ctypes.byref(nid))    # NIM_MODIFY
+        return temp
+
     def remove(self):
         if self.hwnd and self.added:
             _shell32.Shell_NotifyIconW(2, ctypes.byref(self._data()))                     # NIM_DELETE
@@ -182,7 +198,7 @@ class Tray:
         try:
             if msg == self.CB:
                 ev = lparam & 0xFFFF
-                if ev in (0x202, 0x203):          # 왼쪽 단추 뗌 / 더블클릭 → 열기
+                if ev in (0x202, 0x203, 0x405):   # 왼쪽 단추 뗌 / 더블클릭 / 알림 풍선을 누름 → 열기
                     self.q.put("show")
                 elif ev == 0x205:                 # 오른쪽 단추 뗌 → 메뉴
                     self._menu(hwnd)
@@ -307,6 +323,8 @@ class Widget:
         self.root = tk.Tk()
         self.root.title("업무 위젯")
         self.root.overrideredirect(True)
+        self.notify_on = bool(st.get("notify_sanctn", True))      # 결재대기가 새로 오면 윈도우 알림
+        self.sanctn_last = st.get("sanctn_last")                  # 마지막으로 읽은 [결재대기, 긴급] — 껐다 켜도 같은 건으로 또 알리지 않게
         self.pinned = bool(st.get("pinned", True))              # 📍 항상 위 — 껐으면 다음에도 꺼진 채로
         self.root.attributes("-topmost", self.pinned)
         self.root.configure(bg=KEY)
@@ -388,7 +406,8 @@ class Widget:
         self.sanctn_cv = sc
         self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=F(17, True))
         self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
-        sc.bind("<Button-1>", lambda e: self.refresh_sanctn(manual=True))
+        sc.bind("<Button-1>", lambda e: self.click("sanctn"))                 # 눌러서 결재대기함 열기
+        sc.bind("<Button-3>", lambda e: (self.refresh_sanctn(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
         sc.bind("<Enter>", lambda e: sc.itemconfigure("edge", outline=GREEN, fill="#eef6f2"))
         sc.bind("<Leave>", lambda e: sc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.sanctn_busy = False
@@ -427,6 +446,8 @@ class Widget:
             om.add_radiobutton(label="%d%%" % pct + ("  (흐리게)" if pct == 30 else ""), value=pct, variable=self.opa_var,
                                command=lambda: self.on_opacity(self.opa_var.get()))
         self.m.add_cascade(label="투명도", menu=om)
+        self.notify_var = tk.BooleanVar(value=self.notify_on)
+        self.m.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
         self.m.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
                            command=lambda: self.check_update(manual=True))
         self.upd_busy = False
@@ -568,6 +589,8 @@ class Widget:
         finally:
             self.busy = None
             K.log_line("업무위젯 %s %.1fs %s" % (script, time.time() - t0, "ok" if ok else "FAIL " + last))
+            if ok and script == "open_sanctn.py":       # 결재대기함을 연 김에 숫자도 새로 읽는다 (조용히)
+                self.root.after(4000, self.refresh_sanctn)
 
     # ── 에듀파인 결재대기 건수 (check_sanctn.py 가 업무포털 메인 숫자만 읽는다 · 30분마다 + 칸을 누르면 바로) ──
     def refresh_sanctn(self, manual=False):
@@ -614,11 +637,43 @@ class Widget:
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n" + ("긴급 %d" % urgent if urgent else "결재대기"))
             if manual:
                 self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#00754A")
+            self.notify_sanctn(wait, urgent)
         else:
             self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#a8a49b")
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n결재대기")
             if manual:
                 self.say("⚠️ " + reason, "#c82014")
+
+    def notify_sanctn(self, wait, urgent):
+        """결재대기·긴급이 지난번보다 «늘었을 때만» 윈도우 알림을 띄운다 (처음 읽을 때는 기준만 저장 · 줄거나 같으면 조용히)."""
+        prev = self.sanctn_last
+        self.sanctn_last = [wait, urgent]
+        try:
+            K.save_state(sanctn_last=self.sanctn_last)
+        except Exception:
+            pass
+        if not self.notify_on or not isinstance(prev, list) or len(prev) != 2:
+            return
+        new_wait, new_urgent = wait - int(prev[0]), urgent - int(prev[1])
+        if new_urgent > 0:
+            title, text, warn = "긴급 결재가 도착했어요", "긴급 결재 %d건 · 결재대기 모두 %d건" % (urgent, wait), True
+        elif new_wait > 0:
+            title, text, warn = "결재대기가 새로 왔어요", "새로 %d건 · 결재대기 모두 %d건" % (new_wait, wait), False
+        else:
+            return
+        try:
+            temp = self.tray.balloon(title, text, warn)
+        except Exception as e:
+            K.log_line("업무위젯 알림 오류 %r" % e)
+            return
+        K.log_line("업무위젯 결재대기 알림: %s" % text)
+        if temp:                                         # 알림용으로 잠깐 단 트레이 아이콘은 10초 뒤에 뗀다 (위젯이 내려가 있으면 그대로 둔다)
+            self.root.after(10_000, lambda: self.mini is None and self.tray.remove())
+
+    def toggle_notify(self):
+        self.notify_on = self.notify_var.get()
+        K.save_state(notify_sanctn=self.notify_on)
+        self.say("결재대기 알림을 켰어요" if self.notify_on else "결재대기 알림을 껐어요", "#00754A" if self.notify_on else "#5c5c5c")
 
     def sanctn_loop(self):
         self.refresh_sanctn()
@@ -858,6 +913,7 @@ class Widget:
                 ev = self.tray.q.get_nowait()
                 if ev == "show":
                     self.restore()
+                    self.keep_visible(raise_=True)
                 elif ev == "auto":
                     self.auto_var.set(not self.auto_var.get())
                     self.toggle_autostart()

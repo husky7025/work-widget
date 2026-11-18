@@ -88,6 +88,49 @@ PATCHES = {
         ('if ($LASTEXITCODE -ne 0) { Stop-Failed "브라우저 제어 도구 설치" }\nWrite-Host "  OK" -ForegroundColor Green\n',
          'if ($LASTEXITCODE -ne 0) { Stop-Failed "브라우저 제어 도구 설치" }\n}\nWrite-Host "  OK" -ForegroundColor Green\n'),
     ],
+    # 환경설정 창이 늦게 뜨는 까닭: 설정 창이 setup_wizard 를 부르면 구글 달력용 모듈(google_auth_oauthlib·googleapiclient·requests)까지
+    # 한꺼번에 읽는다 (실측 약 1.8초 → 위젯엔 필요 없음). 실제로 쓸 때 읽도록 늦춘다 — 이름은 그대로라 다른 곳엔 영향 없다
+    "setup_wizard.py": [
+        ('''import keyring
+from google_auth_oauthlib.flow import InstalledAppFlow
+from googleapiclient.discovery import build
+
+import school_calendar
+import teacher_config
+''', '''import keyring
+import teacher_config
+
+
+class _Lazy:
+    """처음 쓸 때 모듈을 읽는다 (설정 창 같은 가벼운 화면이 구글·requests 를 읽느라 늦어지지 않게)."""
+    def __init__(self, load):
+        self._load, self._obj = load, None
+
+    def __getattr__(self, name):
+        if self._obj is None:
+            self._obj = self._load()
+        return getattr(self._obj, name)
+
+
+def _load_flow():
+    from google_auth_oauthlib.flow import InstalledAppFlow as _F
+    return _F
+
+
+def _load_school_calendar():
+    import school_calendar as _m
+    return _m
+
+
+InstalledAppFlow = _Lazy(_load_flow)
+school_calendar = _Lazy(_load_school_calendar)
+
+
+def build(*args, **kwargs):
+    from googleapiclient.discovery import build as _build
+    return _build(*args, **kwargs)
+'''),
+    ],
     # 위젯용 크롬을 평소 크롬과 한눈에 구별되게 — 초록색 테마 + 작업표시줄 창 이름 «업무용 크롬 (위젯)»
     # (평소 크롬은 원격 조종을 막으므로 위젯은 따로 된 크롬을 쓴다. 색은 선생님이 직접 바꾼 적이 없을 때만 넣는다)
     "widget/바로가기_엔진.py": [
