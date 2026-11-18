@@ -307,7 +307,8 @@ class Widget:
         self.root = tk.Tk()
         self.root.title("업무 위젯")
         self.root.overrideredirect(True)
-        self.root.attributes("-topmost", True)
+        self.pinned = bool(st.get("pinned", True))              # 📍 항상 위 — 껐으면 다음에도 꺼진 채로
+        self.root.attributes("-topmost", self.pinned)
         self.root.configure(bg=KEY)
         self.root.attributes("-transparentcolor", KEY)
         self.opacity = min(1.0, max(0.3, float(st.get("opacity", 1.0))))
@@ -343,7 +344,7 @@ class Widget:
                 self.pin_label = b
             if text == "⚙":
                 self.gear = b
-        self.pinned = True
+        self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
 
         grid = tk.Frame(self.root, bg=PANEL)
         grid.pack(padx=PAD, pady=(2, 0))
@@ -482,6 +483,11 @@ class Widget:
         w.bind("<ButtonRelease-1>", self.release, add="+")
 
     def press(self, e):
+        try:
+            if str(e.widget.cget("cursor")) == "hand2":      # ✕ ⚙ 📍 · 단추 칸을 누른 것은 끌기가 아니다 (위로 번져 올라온 누름)
+                return
+        except Exception:
+            pass
         self.dragging = True
         self.sx, self.sy = e.x_root, e.y_root
         self.wx, self.wy = self.root.winfo_x(), self.root.winfo_y()
@@ -527,7 +533,7 @@ class Widget:
             self.say("키트 파일을 찾지 못했습니다 (%s) — 업무위젯 설치를 다시 실행하세요" % script)
             return
         if not K.configured():
-            self.say("먼저 오른쪽 클릭 → 인증서 설정", "#c82014")
+            self.say("먼저 ⚙ → 환경설정 (지역·인증서·암호)", "#c82014")
             return
         self.busy = "로그인 중"
         self.say("⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
@@ -641,7 +647,7 @@ class Widget:
                 res = int(json.loads(hit[7:])["wait"])
             else:
                 bad = [l for l in lines if l.startswith("❌")]
-                reason = re.sub(r"^❌\s*", "", bad[-1] if bad else "원인 출력 없음")[:100]
+                reason = re.sub(r"'[^']*'", "'***'", re.sub(r"^❌\s*", "", bad[-1] if bad else "원인 출력 없음"))[:100]     # 작은따옴표 안(인증서 이름 등)은 가린다
         except Exception as e:
             reason = "실행하지 못했습니다: " + type(e).__name__
         self.root.after(0, self.show_jeopsu, res, reason, True)
@@ -810,6 +816,8 @@ class Widget:
             if raise_:
                 self.root.attributes("-topmost", True)
                 self.root.lift()
+                if not self.pinned:
+                    self.root.attributes("-topmost", False)      # 한 번 앞으로만 꺼내고 항상 위는 다시 끈다
         except Exception as e:
             K.log_line("업무위젯 keep_visible 오류 %r" % e)
 
@@ -817,6 +825,7 @@ class Widget:
         self.pinned = not self.pinned
         self.root.attributes("-topmost", self.pinned)
         self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
+        K.save_state(pinned=self.pinned)
 
     def open_setup(self):
         subprocess.Popen([str(K.PY.with_name("pythonw.exe")), str(K.HERE / "바로가기_설정창.pyw")], cwd=str(K.HERE), env=K.ENV)
@@ -873,16 +882,23 @@ class Widget:
     LNK_NAME = "업무위젯.lnk"
     OLD_LNK = "나이스 에듀파인 바로가기.lnk"
 
+    _folder_cache = {}
+
     @staticmethod
     def special_folder(kind):
         """kind: 'Startup' | 'Desktop' — 윈도우가 실제로 쓰는 폴더(OneDrive로 옮겨진 바탕화면 포함)."""
-        try:
-            r = subprocess.run(["powershell", "-NoProfile", "-Command",
-                                "[Console]::OutputEncoding=[Text.Encoding]::UTF8; [Environment]::GetFolderPath('%s')" % kind],
-                               capture_output=True, text=True, encoding="utf-8", errors="replace", creationflags=0x08000000, timeout=15)
-            d = r.stdout.strip()
-        except Exception:
+        d = Widget._folder_cache.get(kind)
+        if d is None:
             d = ""
+            try:                                     # 윈도우 API 로 바로 묻는다 (PowerShell 을 띄우지 않아 메뉴가 늦게 열리지 않는다)
+                buf = K.ctypes.create_unicode_buffer(520)
+                csidl = {"Startup": 0x0007, "Desktop": 0x0010}[kind]
+                if K.ctypes.windll.shell32.SHGetFolderPathW(None, csidl, None, 0, buf) == 0:
+                    d = buf.value.strip()
+            except Exception:
+                d = ""
+            if d:
+                Widget._folder_cache[kind] = d
         if d:
             return Path(d)
         if kind == "Startup":
@@ -894,10 +910,11 @@ class Widget:
         target = HERE0 / "바로가기위젯.pyw"
         ico = HERE0 / "업무위젯.ico"
         icon = ico if ico.exists() else pyw
-        ps = ('$s=(New-Object -ComObject WScript.Shell).CreateShortcut("%s"); $s.TargetPath="%s"; '
-              "$s.Arguments='\"%s\"'; $s.WorkingDirectory=\"%s\"; $s.IconLocation=\"%s,0\"; $s.Description=\"업무위젯\"; $s.Save()"
-              % (lnk, pyw, target, HERE0, icon))
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, capture_output=True, creationflags=0x08000000, timeout=20)
+        ps = ('$s=(New-Object -ComObject WScript.Shell).CreateShortcut($env:WW_LNK); $s.TargetPath=$env:WW_PYW; '
+              "$s.Arguments='\"' + $env:WW_TARGET + '\"'; $s.WorkingDirectory=$env:WW_DIR; $s.IconLocation=$env:WW_ICON + ',0'; "
+              '$s.Description="업무위젯"; $s.Save()')
+        env = dict(K.ENV, WW_LNK=str(lnk), WW_PYW=str(pyw), WW_TARGET=str(target), WW_DIR=str(HERE0), WW_ICON=str(icon))
+        subprocess.run(["powershell", "-NoProfile", "-Command", ps], check=True, capture_output=True, creationflags=0x08000000, timeout=20, env=env)
 
     def startup_lnk(self):
         return self.special_folder("Startup") / self.LNK_NAME
@@ -984,7 +1001,7 @@ class Widget:
             if v:
                 self.root.after(1500, lambda: self.upd_popup("🎉 업데이트 완료", "새 버전 v%s 로 바뀌었어요" % v, "#00754A", 5000))
         if not K.configured():
-            self.root.after(800, lambda: self.say("오른쪽 클릭 → 인증서 설정부터 해 주세요", "#c82014"))
+            self.root.after(800, lambda: self.say("⚙ → 환경설정 (지역·인증서·암호)부터 해 주세요", "#c82014"))
         self.root.mainloop()
 
 

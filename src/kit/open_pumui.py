@@ -62,10 +62,13 @@ def in_school_accounting(page):
     return "사업관리" in top_menus(page)           # 업무관리 쪽 위 메뉴는 문서관리·메모관리…, 학교회계 쪽은 사업관리·계약관리
 
 
+DOWN_TRIES = (2, 1, 3, 4, 5)        # ↓ 를 몇 번 누를지 — 처음은 늘 쓰던 2번, 안 맞으면 차례로 다른 칸
+
+
 def select_school_accounting(page):
     """왼쪽 위 «업무관리» 바(콤보)에서 «학교회계» 를 고른다. 목록 항목은 화면 밖에 그려져 마우스로 못 누르므로 키보드(↓↓ Enter)로 고른다.
     화면 크기와 상관없이 콤보의 실제 자리를 읽어 누르고, 공지 창이 늦게 떠서 누름이 먹히는 경우를 위해 몇 번 다시 시도한다."""
-    for attempt in range(5):
+    for attempt in range(len(DOWN_TRIES) + 1):
         if in_school_accounting(page):
             return
         E.close_modals(page)
@@ -76,10 +79,10 @@ def select_school_accounting(page):
             continue
         page.mouse.click(box["x"] + box["width"] - 15, box["y"] + box["height"] / 2)     # 오른쪽 ▼ 단추
         page.wait_for_timeout(1000)
-        for _ in range(5):
+        for _ in range(8):
             page.keyboard.press("ArrowUp")                                              # 맨 위로 맞춘 뒤
-        for _ in range(2):
-            page.keyboard.press("ArrowDown")                                            # 업무관리 → … → 학교회계 (3번째)
+        for _ in range(DOWN_TRIES[attempt % len(DOWN_TRIES)]):
+            page.keyboard.press("ArrowDown")                                            # 보통 업무관리 → … → 학교회계 (3번째) — 권한에 따라 순서가 다르면 다음 시도에 다른 칸을 고른다
         page.keyboard.press("Enter")
         for _ in range(10):
             page.wait_for_timeout(600)
