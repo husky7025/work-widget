@@ -39,8 +39,41 @@ except Exception:
     UPD = None
 UPDATE_HOUR = 10                         # 하루 한 번, 오전 10시에 새 버전 확인 (10시에 꺼져 있었으면 그날 켠 뒤 2분쯤에 한 번)
 UPDATE_POLL_MS = 5 * 60 * 1000           # 10시가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
-SIZE_W, SIZE_H = 424, 190
-TILE, GAP, PAD = 60, 6, 12
+import ctypes as _c0
+
+
+def _screen_dpi():
+    """윈도우 «화면 배율» 인식을 켜서(안 켜면 윈도우가 흐릿하게 늘려 그린다) 지금 배율을 돌려준다 (1.0 = 100%, 1.5 = 150%). 못 켜면 1.0."""
+    try:
+        try:
+            _c0.windll.shcore.SetProcessDpiAwareness(1)           # 시스템 DPI 인식 — 이미 정해져 있어 실패해도 괜찮다
+        except Exception:
+            _c0.windll.user32.SetProcessDPIAware()
+        aw = _c0.c_int(-1)
+        if _c0.windll.shcore.GetProcessDpiAwareness(None, _c0.byref(aw)) != 0 or aw.value < 1:
+            return 1.0                                                 # 인식이 안 켜졌으면 윈도우가 알아서 늘리니 우리는 그대로
+        return max(1.0, _c0.windll.user32.GetDpiForSystem() / 96.0)
+    except Exception:
+        return 1.0
+
+
+SIZE_CHOICES = ((85, "작게 (85%)"), (100, "보통 (100%)"), (120, "크게 (120%)"))
+try:
+    UI_PCT = int(K.load_state().get("ui_scale", 100))
+except Exception:
+    UI_PCT = 100
+if UI_PCT not in [c[0] for c in SIZE_CHOICES]:
+    UI_PCT = 100
+DPI = _screen_dpi()
+SC = DPI * UI_PCT / 100.0              # 그림 크기 배율 (글자는 윈도우가 화면 배율을 따로 곱해 주므로 UI_PCT 만)
+
+
+def px(n):
+    return int(round(n * SC))
+
+
+SIZE_W, SIZE_H = px(424), px(190)
+TILE, GAP, PAD = px(60), px(6), px(12)
 PANEL, TILE_BG, EDGE, GREEN, WHITE = "#f2f0eb", "#ffffff", "#e4e0d8", "#00754A", "#212121"   # 스타벅스 톤: 크림 판 / 타일 / 테두리 / 그린 / 글자
 FONT = "Malgun Gothic"
 # 페이퍼로지 글꼴 — 위젯 폴더의 ttf 를 이 프로그램에서만 쓰게 올린다 (PC에 설치 안 해도 됨 · 실패하면 맑은 고딕)
@@ -53,7 +86,12 @@ except Exception:
 FONT_R, FONT_B = ("Paperlogy 4 Regular", "Paperlogy 7 Bold") if _ok else (FONT, FONT)
 
 
+def FS(size):
+    return max(6, int(round(size * UI_PCT / 100.0)))
+
+
 def F(size, bold=False):
+    size = FS(size)
     return (FONT_B, size) if (bold and _ok) else ((FONT_R, size, "bold") if bold else (FONT_R, size))
 
 
@@ -239,7 +277,7 @@ except Exception:
 
 class FlipCard:
     """숫자 카드. 값이 바뀌면 윗조각이 접혀 내려오고 아랫조각이 펼쳐지는 모양으로 넘어간다."""
-    W, H, SS = 46, 32, 4
+    W, H, SS = px(46), px(32), 4
     TOP, BOTTOM, LINE = "#faf8f4", "#efece5", "#d6d1c6"
     FRAMES = 6
     DELAY = 32
@@ -261,11 +299,11 @@ class FlipCard:
         base = Image.new("RGB", (W, H), self.top)
         ImageDraw.Draw(base).rectangle((0, H // 2, W, H), fill=self.bottom)
         mask = Image.new("L", (W, H), 0)
-        ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=7 * S, fill=255)
+        ImageDraw.Draw(mask).rounded_rectangle((0, 0, W - 1, H - 1), radius=px(7) * S, fill=255)
         card = Image.new("RGB", (W, H), self.bg)
         card.paste(base, (0, 0), mask)
         d = ImageDraw.Draw(card)
-        d.text((W // 2, H // 2), text, font=ImageFont.truetype(_FLIP_FONT, 21 * S), fill=self.color, anchor="mm")
+        d.text((W // 2, H // 2), text, font=ImageFont.truetype(_FLIP_FONT, px(21) * S), fill=self.color, anchor="mm")
         d.line((0, H // 2, W, H // 2), fill=self.line, width=max(2, S // 2))
         im = card.resize((self.W, self.H), Image.LANCZOS)
         self.cache[text] = im
@@ -336,7 +374,7 @@ class Widget:
         self.root.geometry("%dx%d+%d+%d" % (SIZE_W, SIZE_H, x, y))
         self.bgc = tk.Canvas(self.root, width=SIZE_W, height=SIZE_H, bg=KEY, highlightthickness=0)
         self.bgc.place(x=0, y=0)
-        round_rect(self.bgc, 1, 1, SIZE_W - 2, SIZE_H - 2, 16, fill=PANEL, outline="#d6d1c6", width=1)
+        round_rect(self.bgc, 1, 1, SIZE_W - 2, SIZE_H - 2, px(16), fill=PANEL, outline="#d6d1c6", width=1)
         tk.Misc.lower(self.bgc)
         self.busy = None
         self.lock = threading.Lock()
@@ -349,13 +387,13 @@ class Widget:
 
         # 위쪽 줄: 📍(항상 위) ⚙(환경설정) ✕(닫기)
         bar = tk.Frame(self.root, bg=PANEL)
-        bar.pack(fill="x", padx=PAD - 4, pady=(8, 0))
+        bar.pack(fill="x", padx=PAD - px(4), pady=(px(8), 0))
         self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=F(9, True))
-        self.title_lb.pack(side="left", padx=(10, 0))
+        self.title_lb.pack(side="left", padx=(px(10), 0))
         for text, cmd, tip in (("✕", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
                                ("⚙", self.show_options, "환경설정"),
                                ("📍", self.toggle_pin, "항상 위 켜기/끄기")):
-            b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=F(10), cursor="hand2", padx=5)
+            b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=F(10), cursor="hand2", padx=px(5))
             b.pack(side="right")
             b.bind("<Button-1>", lambda e, c=cmd: c())
             if text == "📍":
@@ -365,7 +403,7 @@ class Widget:
         self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
 
         grid = tk.Frame(self.root, bg=PANEL)
-        grid.pack(padx=PAD, pady=(2, 0))
+        grid.pack(padx=PAD, pady=(px(2), 0))
         self.tiles = []
         self.clock = {}
         self.cards = {}
@@ -379,33 +417,33 @@ class Widget:
         for i, key in enumerate(CLOCK_KEYS):
             c = self.make_tile(self.clock_row, 0, i)
             label = CLOCK_LABEL[key]
-            c.create_text(TILE // 2, 47, text=label, fill=GREEN, font=F(7, True))
+            c.create_text(TILE // 2, px(47), text=label, fill=GREEN, font=F(7, True))
             if key == "ss":
                 c.itemconfigure("edge", fill="#eef6f2", outline="#a9cdbf")
             if HAVE_FLIP:
                 num = None
-                self.cards[key] = FlipCard(c, TILE // 2, 24, "#eef6f2" if key == "ss" else TILE_BG,
+                self.cards[key] = FlipCard(c, TILE // 2, px(24), "#eef6f2" if key == "ss" else TILE_BG,
                                            GREEN if key == "ss" else WHITE,
                                            top="#e3f0ea" if key == "ss" else None, bottom="#d4e9e2" if key == "ss" else None,
                                            line="#a9cdbf" if key == "ss" else None)
             else:
-                num = c.create_text(TILE // 2, 26, text="--", fill=GREEN if key == "ss" else WHITE, font=F(18, True))
+                num = c.create_text(TILE // 2, px(26), text="--", fill=GREEN if key == "ss" else WHITE, font=F(18, True))
             self.clock[key] = (c, num)
             self.clock_vars[key] = tk.BooleanVar(value=self.clock_on[key])
         # 아랫줄: 단추 4 + 결재대기 칸 + 기관접수대기 칸 (투명도는 ⚙ 메뉴)
         for i, (kind, icon, label) in enumerate(BUTTONS):
             c = self.make_tile(grid, 1, i, hand=True)
             acc, badge, tint = ACCENT[kind]
-            c.create_oval(TILE // 2 - 14, 7, TILE // 2 + 14, 35, fill=badge, outline="")
-            c.create_text(TILE // 2, 21, text=icon, fill=acc, font=("Segoe UI Emoji", 14))
-            c.create_text(TILE // 2, 46, text=label, fill=WHITE, font=F(8, True))
+            c.create_oval(TILE // 2 - px(14), px(7), TILE // 2 + px(14), px(35), fill=badge, outline="")
+            c.create_text(TILE // 2, px(21), text=icon, fill=acc, font=("Segoe UI Emoji", FS(14)))
+            c.create_text(TILE // 2, px(46), text=label, fill=WHITE, font=F(8, True))
             c.bind("<Button-1>", lambda e, k=kind: self.click(k))
             c.bind("<Enter>", lambda e, w=c, a=acc, tt=tint: w.itemconfigure("edge", outline=a, fill=tt))
             c.bind("<Leave>", lambda e, w=c: w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         sc = self.make_tile(grid, 1, 4, hand=True)
         self.sanctn_cv = sc
-        self.sanctn_num = sc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=F(17, True))
-        self.sanctn_lab = sc.create_text(TILE // 2, 44, text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
+        self.sanctn_num = sc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
+        self.sanctn_lab = sc.create_text(TILE // 2, px(44), text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
         sc.bind("<Button-1>", lambda e: self.click("sanctn"))                 # 눌러서 결재대기함 열기
         sc.bind("<Button-3>", lambda e: (self.refresh_sanctn(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
         self.sanctn_look = (TILE_BG, EDGE, 1, False)           # (바탕, 테두리, 테두리 굵기, 알림 중?) — 결재대기가 있으면 눈에 띄게 바뀐다
@@ -415,8 +453,8 @@ class Widget:
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
         jc = self.make_tile(grid, 1, 5, hand=True)
         self.jeopsu_cv = jc
-        self.jeopsu_num = jc.create_text(TILE // 2, 17, text="--", fill="#a8a49b", font=F(17, True))
-        jc.create_text(TILE // 2, 44, text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
+        self.jeopsu_num = jc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
+        jc.create_text(TILE // 2, px(44), text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
         jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#2b5148", fill="#eef6f2"))
         jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
@@ -424,7 +462,7 @@ class Widget:
         self.opa_var = tk.IntVar(value=int(round(self.opacity * 10) * 10))
 
         self.status = tk.Label(self.root, text="", bg=PANEL, fg="#c82014", font=F(8), anchor="w")
-        self.status.pack(fill="x", padx=PAD + 2, pady=(6, 0))
+        self.status.pack(fill="x", padx=PAD + px(2), pady=(px(6), 0))
         for w in (self.root, self.bgc, bar, self.title_lb, grid, self.status):
             self.bind_drag(w)
 
@@ -447,8 +485,14 @@ class Widget:
             om.add_radiobutton(label="%d%%" % pct + ("  (흐리게)" if pct == 30 else ""), value=pct, variable=self.opa_var,
                                command=lambda: self.on_opacity(self.opa_var.get()))
         self.m.add_cascade(label="투명도", menu=om)
+        self.size_var = tk.IntVar(value=UI_PCT)
+        sm = tk.Menu(self.m, tearoff=0, font=F(10))
+        for pct, name in SIZE_CHOICES:
+            sm.add_radiobutton(label=name, value=pct, variable=self.size_var, command=self.on_size)
+        self.m.add_cascade(label="위젯 크기", menu=sm)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
         self.m.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
+        self.m.add_command(label="문제 해결용 기록 복사 (붙여넣어 보내기)", command=self.copy_support)
         self.m.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
                            command=lambda: self.check_update(manual=True))
         self.upd_busy = False
@@ -480,7 +524,7 @@ class Widget:
         self.root.geometry("%dx%d" % (SIZE_W, h))
         self.bgc.configure(height=h)
         self.bgc.delete("all")
-        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, 16, fill=PANEL, outline="#d6d1c6", width=1)
+        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, px(16), fill=PANEL, outline="#d6d1c6", width=1)
         if save:
             try:
                 K.save_state(clock_cards=on)
@@ -492,7 +536,7 @@ class Widget:
     def make_tile(self, parent, r, c, hand=False):
         cv = tk.Canvas(parent, width=TILE, height=TILE, bg=PANEL, highlightthickness=0, cursor="hand2" if hand else "")
         cv.grid(row=r, column=c, padx=GAP // 2, pady=GAP // 2)
-        round_rect(cv, 2, 2, TILE - 2, TILE - 2, 12, fill=TILE_BG, outline=EDGE, width=1, tags="edge")
+        round_rect(cv, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=TILE_BG, outline=EDGE, width=1, tags="edge")
         if not hand:
             self.bind_drag(cv)
         self.tiles.append(cv)
@@ -688,6 +732,59 @@ class Widget:
         if temp:                                         # 알림용으로 잠깐 단 트레이 아이콘은 10초 뒤에 뗀다 (위젯이 내려가 있으면 그대로 둔다)
             self.root.after(10_000, lambda: self.mini is None and self.tray.remove())
 
+    def on_size(self):
+        """작게/보통/크게 — 모든 칸의 크기가 바뀌므로 저장한 뒤 위젯을 다시 켠다."""
+        v = self.size_var.get()
+        if v == UI_PCT:
+            return
+        if self.busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy:
+            self.size_var.set(UI_PCT)
+            self.say("하던 작업이 끝난 뒤 크기를 바꿔 주세요", "#c82014")
+            return
+        K.save_state(ui_scale=v)
+        self.say("크기를 바꾸려고 위젯을 다시 켜요…", "#5c5c5c")
+        self.save_pos()
+        self.root.after(300, self.relaunch)
+
+    @staticmethod
+    def mask_private(text):
+        """기록에 섞일 수 있는 개인 정보를 가린다 — 작은따옴표 안(인증서 이름 등) · 윈도우 사용자 폴더 이름 · 메일 주소 · 6자리 이상 숫자."""
+        text = re.sub(r"'[^']*'", "'***'", text)
+        text = re.sub(r"(?i)([A-Za-z]:\\Users\\)[^\\/\s]+", r"\1***", text)
+        text = re.sub(r"[\w.+-]+@[\w-]+(?:\.[\w-]+)+", "***@***", text)
+        return re.sub(r"\d{6,}", "******", text)
+
+    def support_text(self):
+        import platform
+        chrome = any((Path(b) / "Google" / "Chrome" / "Application" / "chrome.exe").exists()
+                     for b in (K.os.environ.get("PROGRAMFILES"), K.os.environ.get("PROGRAMFILES(X86)"), K.os.environ.get("LOCALAPPDATA")) if b)
+        try:
+            lines = K.LOG.read_text(encoding="utf-8").splitlines()[-30:] if K.LOG.exists() else []
+        except Exception:
+            lines = []
+        head = [
+            "[업무위젯 문제 해결용 기록]",
+            "위젯 버전: v%s" % (UPD.local_version(KIT) if UPD else "?"),
+            "윈도우: %s · 파이썬 %s" % (platform.platform(), platform.python_version()),
+            "화면 배율: %d%% · 위젯 크기: %d%%" % (round(DPI * 100), UI_PCT),
+            "설정(지역·인증서): %s" % ("있음" if K.configured() else "없음"),
+            "구글 크롬 설치: %s" % ("있음" if chrome else "못 찾음"),
+            "결재대기 알림: %s · 항상 위: %s" % ("켜짐" if self.notify_on else "꺼짐", "켜짐" if self.pinned else "꺼짐"),
+            "--- 최근 기록 %d줄 (개인 정보는 *** 로 가렸어요) ---" % len(lines),
+        ]
+        return self.mask_private("\n".join(head + lines))
+
+    def copy_support(self):
+        try:
+            txt = self.support_text()
+            self.root.clipboard_clear()
+            self.root.clipboard_append(txt)
+            self.root.update()                                  # 창이 닫혀도 클립보드가 남도록 바로 넘긴다
+            self.say("✅ 기록을 복사했어요 — 메신저에 붙여넣기(Ctrl+V) 하세요", "#00754A")
+        except Exception as e:
+            K.log_line("업무위젯 기록 복사 오류 %r" % e)
+            self.say("기록을 복사하지 못했어요", "#c82014")
+
     def toggle_notify(self):
         self.notify_on = self.notify_var.get()
         K.save_state(notify_sanctn=self.notify_on)
@@ -777,15 +874,29 @@ class Widget:
         self.upd_busy = True
         self.upd_popup("⬇ 업데이트 중", "v%s 로 바꾸고 있어요 · 끝나면 위젯이 다시 켜져요" % m["version"], "#00754A")
 
+        state = {"done": False}
+
+        def watchdog():
+            """3분이 지나도 끝나지 않으면 «업데이트 중» 에서 빠져나온다 (창이 영원히 떠 있지 않게)."""
+            if state["done"]:
+                return
+            self.busy = None
+            self.upd_busy = False
+            K.log_line("업무위젯 업데이트가 3분 안에 끝나지 않아 멈춤 표시를 풀었습니다")
+            self.upd_popup("⚠ 업데이트가 오래 걸려요", "지금 버전 그대로 써요 · 잠시 뒤 다시 확인해 보세요", "#c82014", 8000)
+        self.root.after(180_000, watchdog)
+
         def work():
             try:
                 UPD.apply(KIT, m, lambda s: self.root.after(0, self.say, "⏳ " + s + "…", "#5c5c5c"))
+                state["done"] = True
                 self.root.after(0, self.relaunch)
             except Exception as e:
                 msg = (str(e).splitlines() or [type(e).__name__])[0][:80]
                 K.log_line("업무위젯 업데이트 실패: " + msg)
                 self.root.after(0, self.upd_popup, "⚠ 업데이트 실패", "지금 버전 그대로 써요 · 다음에 다시 해 볼게요", "#c82014", 6000)
             finally:
+                state["done"] = True
                 self.busy = None
                 self.upd_busy = False
         threading.Thread(target=work, daemon=True).start()
@@ -816,9 +927,9 @@ class Widget:
                 inner = tk.Frame(pop, bg="#ffffff")
                 inner.pack(padx=2, pady=2)
                 pop._t = tk.Label(inner, bg="#ffffff", font=F(12, True))
-                pop._t.pack(padx=22, pady=(14, 2))
+                pop._t.pack(padx=px(22), pady=(px(14), 2))
                 pop._s = tk.Label(inner, bg="#ffffff", fg="#5c5c5c", font=F(9))
-                pop._s.pack(padx=22, pady=(0, 14))
+                pop._s.pack(padx=px(22), pady=(0, px(14)))
                 for w in (pop, inner, pop._t, pop._s):
                     w.bind("<Button-1>", lambda e: self.close_upd_popup())
                 self._upd_pop = pop

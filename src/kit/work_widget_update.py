@@ -187,11 +187,46 @@ def check(kit):
     return m if vtuple(m["version"]) > vtuple(local_version(kit)) else None
 
 
+_SKIP_DIRS = (".venv", "__pycache__")
+_MAY_BE_LOCKED = (".ttf", ".otf")        # 위젯이 켜져 있는 동안 윈도우가 붙들고 있는 파일 (글꼴) — 못 덮어써도 업데이트는 계속한다
+
+
+def _same(a, b):
+    try:
+        if a.stat().st_size != b.stat().st_size:
+            return False
+        return hashlib.sha256(a.read_bytes()).digest() == hashlib.sha256(b.read_bytes()).digest()
+    except OSError:
+        return False
+
+
+def _copy_tree(src, dst):
+    """src 의 파일을 dst 로 덮어쓴다 — 내용이 같은 파일은 건드리지 않고, 붙들린 글꼴은 건너뛴다.
+    (예전엔 robocopy 를 썼는데, 위젯이 붙들고 있는 글꼴 파일에서 «다시 시도» 를 사실상 끝없이 되풀이해 «업데이트 중» 이 안 끝났다)"""
+    src, dst = Path(src), Path(dst)
+    for f in sorted(src.rglob("*")):
+        rel = f.relative_to(src)
+        if not f.is_file() or any(part in _SKIP_DIRS or part.startswith("chrome_profile") for part in rel.parts):
+            continue
+        t = dst / rel
+        if t.exists() and _same(f, t):
+            continue
+        t.parent.mkdir(parents=True, exist_ok=True)
+        for attempt in range(3):
+            try:
+                shutil.copyfile(f, t)
+                break
+            except OSError as e:
+                if attempt < 2:
+                    time.sleep(0.5)
+                    continue
+                if t.suffix.lower() in _MAY_BE_LOCKED:
+                    break
+                raise RuntimeError("파일 복사 실패 (%s: %s)" % (rel.as_posix(), type(e).__name__))
+
+
 def _robocopy(src, dst, extra=()):
-    r = subprocess.run(["robocopy", str(src), str(dst), "/E", "/XD", ".venv", "chrome_profile*", "__pycache__",
-                        *extra, "/NFL", "/NDL", "/NJH", "/NJS", "/NP"], capture_output=True, creationflags=NO_WINDOW)
-    if r.returncode >= 8:
-        raise RuntimeError("파일 복사 실패 (robocopy %d)" % r.returncode)
+    _copy_tree(src, dst)
 
 
 def apply(kit, m, log=lambda s: None):

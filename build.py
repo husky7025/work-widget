@@ -35,6 +35,7 @@ SRC = HERE / "src"
 SCRIPTS = HERE / "scripts"
 BUILD = Path(tempfile.gettempdir()) / "work-widget-build"   # OneDrive 폴더 밖 (동기화가 파일을 잡고 있어 지우기 실패)
 OUT_ZIP = HERE.parent / "업무위젯_설치묶음.zip"
+UPDATE_ZIP = BUILD / "update-app.zip"          # 자동 업데이트로 내려 줄 묶음 (글꼴 뺀 것)
 VERSION = (HERE / "VERSION").read_text(encoding="utf-8").strip()
 PUBKEY_FILE = HERE / "signing_public_key.txt"
 REPO = "husky7025/work-widget"
@@ -218,6 +219,12 @@ def main():
         for f in sorted(stage.rglob("*")):
             if f.is_file() and "__pycache__" not in f.parts:
                 z.write(f, f.relative_to(stage).as_posix())
+    # 4-1) 자동 업데이트용 app.zip — 글꼴(.ttf)은 뺀다. 이미 깔린 위젯의 옛 업데이트 프로그램(robocopy)이 «위젯이 붙들고 있는 글꼴»을
+    #      덮어쓰려다 끝없이 기다리는 문제가 있어서, 글꼴이 묶음에 없으면 그 문제가 안 생긴다 (글꼴은 처음 설치 때 이미 들어 있다)
+    with zipfile.ZipFile(UPDATE_ZIP, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(stage.rglob("*")):
+            if f.is_file() and "__pycache__" not in f.parts and f.suffix.lower() not in (".ttf", ".otf"):
+                z.write(f, f.relative_to(stage).as_posix())
     for name in ("install_gui.ps1", "install_widget.ps1", "uninstall_widget.ps1"):
         shutil.copy2(SCRIPTS / name, payload / name)
     shutil.copy2(SCRIPTS / "install_widget.cmd", dist / "install_widget.cmd")
@@ -309,7 +316,8 @@ def publish(notes):
     if last.returncode == 0 and last.stdout.strip():
         if U.vtuple(VERSION) <= U.vtuple(last.stdout.strip().lstrip("v")):
             sys.exit("X VERSION(%s) 을 지난 릴리스(%s)보다 올려 주세요" % (VERSION, last.stdout.strip()))
-    app = main()
+    main()
+    app = UPDATE_ZIP                                   # 업데이트 채널에는 글꼴 없는 묶음을 올린다 (처음 설치용은 work-widget-setup.zip)
     data = app.read_bytes()
     manifest = json.dumps({"format": 1, "repo": REPO, "version": VERSION, "file": "app.zip",
                            "sha256": hashlib.sha256(data).hexdigest(), "size": len(data),
