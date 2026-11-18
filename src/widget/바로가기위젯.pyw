@@ -694,10 +694,11 @@ class Widget:
         self.apply_update(m, manual)
 
     def apply_update(self, m, manual=False):
-        if self.busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 5분 뒤에
+        if self.busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 잠깐 뒤에 다시 (직접 눌렀으면 15초, 자동이면 1분)
             if manual:
-                self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 업데이트할게요" % m["version"], "#5c5c5c", 4000)
-            self.root.after(5 * 60 * 1000, self.apply_update, m)
+                self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 바로 업데이트할게요" % m["version"], "#5c5c5c")
+            self.upd_busy = True                      # 기다리는 동안 다른 확인이 또 시작되지 않게
+            self.root.after(15_000 if manual else 60_000, self.apply_update, m, manual)
             return
         self.busy = "업데이트 중"
         self.upd_busy = True
