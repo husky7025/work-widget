@@ -497,7 +497,6 @@ class Widget:
                            command=lambda: self.check_update(manual=True))
         self.upd_busy = False
         self.m.add_separator()
-        self.m.add_command(label="시스템 트레이로 내리기", command=self.minimize)
         self.m.add_command(label="위젯 완전 종료", command=self.quit)
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
         self.apply_clock(save=False)
@@ -729,8 +728,7 @@ class Widget:
             K.log_line("업무위젯 알림 오류 %r" % e)
             return
         K.log_line("업무위젯 결재대기 알림: %s" % text)
-        if temp:                                         # 알림용으로 잠깐 단 트레이 아이콘은 10초 뒤에 뗀다 (위젯이 내려가 있으면 그대로 둔다)
-            self.root.after(10_000, lambda: self.mini is None and self.tray.remove())
+        # 트레이 아이콘은 항상 달려 있으므로 알림 뒤에 떼지 않는다
 
     def on_size(self):
         """작게/보통/크게 — 모든 칸의 크기가 바뀌므로 저장한 뒤 위젯을 다시 켠다."""
@@ -1032,7 +1030,6 @@ class Widget:
         if self.mini is None:
             return
         self.mini = None
-        self.tray.remove()
         self.root.deiconify()
         self.keep_visible(raise_=True)
 
@@ -1175,6 +1172,7 @@ class Widget:
 
     def mainloop(self):
         threading.Thread(target=self.migrate_shortcuts, daemon=True).start()
+        self.tray.add()                                      # 위젯이 떠 있는 동안에도 트레이 아이콘을 항상 보인다
         self.drain_tray()
         self.root.after(200, self.keep_visible)
         self.tick()
