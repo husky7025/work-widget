@@ -974,6 +974,12 @@ class Widget:
         finally:
             self.root.after(UPDATE_POLL_MS, self.update_loop)
 
+    def jeopsu_first(self):
+        if self.sanctn_busy or self.jeopsu_busy or self.busy:     # 겹치면 건너뛰지 않고 잠깐 뒤 다시 본다
+            self.root.after(3000, self.jeopsu_first)
+            return
+        self.jeopsu_loop()
+
     def jeopsu_loop(self):
         self.refresh_jeopsu()
         self.root.after(SANCTN_EVERY_MS, self.jeopsu_loop)
@@ -1197,8 +1203,8 @@ class Widget:
         self.root.after(200, self.keep_visible)
         self.tick()
         self.poll()
-        self.root.after(4000, self.sanctn_loop)
-        self.root.after(70_000, self.jeopsu_loop)           # 결재대기 읽기와 겹치지 않게 1분쯤 늦게
+        self.root.after(30_000, self.sanctn_loop)           # 켠 지 30초 뒤 첫 읽기 (그 사이 업무포털 로그인을 마칠 시간)
+        self.root.after(30_000, self.jeopsu_first)          # 같이 30초 뒤 — 결재대기 읽기가 끝나기를 기다렸다가 이어서 읽는다
         if UPD is not None:
             self.root.after(120_000, self.update_loop)
             v = UPD.just_updated(KIT)
