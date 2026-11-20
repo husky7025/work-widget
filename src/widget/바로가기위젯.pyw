@@ -497,7 +497,7 @@ class Widget:
                            command=lambda: self.check_update(manual=True))
         self.upd_busy = False
         self.m.add_separator()
-        self.m.add_command(label="위젯 완전 종료", command=self.quit)
+        self.m.add_command(label="위젯 완전 종료", command=self.quit_from_menu)
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
         self.apply_clock(save=False)
 
@@ -1056,10 +1056,30 @@ class Widget:
     def popup(self, x, y):
         self.auto_var.set(self.autostart_on())
         self.auto_cache = self.auto_var.get()
+        self._pop_t = time.monotonic()
         self.m.tk_popup(x, y)
 
     def show_options(self):
-        self.popup(self.gear.winfo_rootx(), self.gear.winfo_rooty() + self.gear.winfo_height())
+        # 위젯이 화면 아래쪽에 있으면 윈도우가 메뉴를 위로 밀어 올려, 마지막 줄(위젯 완전 종료)이 톱니바퀴 자리에 오고
+        # 마우스를 떼는 순간 눌려 버린다 → 아래가 모자라면 톱니바퀴 «위쪽»에 메뉴 바닥이 오게 직접 올려 띄운다.
+        gx, gy, gh = self.gear.winfo_rootx(), self.gear.winfo_rooty(), self.gear.winfo_height()
+        est_h = (self.m.index("end") + 1) * px(30) + px(12)           # 줄 수로 어림한 메뉴 높이
+        y = gy + gh + px(2)
+        if y + est_h > self.root.winfo_screenheight() - px(48):       # 작업표시줄 몫 48 을 남긴다
+            y = max(0, gy - est_h - px(2))
+        self.popup(gx, y)
+
+    def quit_from_menu(self):
+        """메뉴에서 «위젯 완전 종료»: 메뉴가 뜬 직후(0.4초 안)의 눌림은 실수로 보고 무시하고, 그 뒤에도 한 번 묻는다."""
+        if time.monotonic() - getattr(self, "_pop_t", 0) < 0.4:
+            return
+        try:
+            from tkinter import messagebox
+            if not messagebox.askyesno("업무위젯", "위젯을 완전히 끝낼까요?\n(창만 숨기려면 ✕ 를 누르세요)", parent=self.root):
+                return
+        except Exception:
+            pass
+        self.quit()
 
     # 바로가기 이름·아이콘 (이름은 «업무위젯», 예전 이름이 있으면 새 이름으로 바꿔 준다)
     LNK_NAME = "업무위젯.lnk"

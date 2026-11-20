@@ -58,6 +58,42 @@ PW_NEW = '''    if not old.get("cert_name"):
                  font=("맑은 고딕", 9), fg="#166534", bg="#dcfce7", justify="left", anchor="w", padx=10, pady=6).grid(
             row=1, column=0, columnspan=2, sticky="we", padx=18, pady=(0, 10))'''
 
+# keyring 은 처음 쓸 때 읽는다 (읽는 데 약 0.8초) — 이름·사용법은 그대로
+KR_LAZY = '''class _LazyKeyring:
+    def __getattr__(self, name):
+        import keyring as _k
+        return getattr(_k, name)
+
+
+keyring = _LazyKeyring()  # noqa: E402
+'''
+# 저장된 암호가 있는지는 뒤에서 확인하고, 끝나면 안내 문구만 바꾼다 (그동안 저장 단추를 눌러도 «암호를 넣어 주세요»가 뜰 뿐 안전)
+PW_CHECK_NEW = '''    saved_pw = False
+    label(r, "③ 인증서 암호", "나이스 로그인할 때 넣는 그 암호")
+    pw_hint = root.grid_slaves(row=r + 1, column=1)[0]
+    pw_box = []
+
+    def _pw_bg():
+        try:
+            pw_box.append(bool(old.get("cert_name") and keyring.get_password(teacher_config.KEYRING_SERVICE, old["cert_name"])))
+        except Exception:
+            pw_box.append(False)
+
+    import threading
+    threading.Thread(target=_pw_bg, daemon=True).start()
+
+    def _pw_poll():
+        nonlocal saved_pw
+        if not pw_box:
+            root.after(60, _pw_poll)
+            return
+        saved_pw = pw_box[0]
+        if saved_pw:
+            pw_hint.config(text="이미 저장돼 있어요 — 바꿀 때만 넣으세요")
+
+    root.after(60, _pw_poll)
+'''
+
 PATCHES = {
     # 출근·퇴근 기본값 08:00 / 16:00 (처음 설치할 때 칸에 미리 채워지는 값 — 선생님이 바꿀 수는 있다)
     "widget/바로가기_설정창.pyw": [
@@ -65,9 +101,16 @@ PATCHES = {
         ('old.get("work_start", "08:40")', 'old.get("work_start", "08:00")'),
         ('old.get("work_end", "16:20")', 'old.get("work_end", "16:00")'),
         ('08:40 처럼 적어 주세요', '08:00 처럼 적어 주세요'),
+        # 환경설정 창이 늦게 뜨는 까닭 2: keyring 을 읽는 데 약 0.8초, 저장된 암호 확인(get_password)에 약 0.4초 — 창을 먼저 띄우고 뒤에서 확인한다
+        ('import keyring  # noqa: E402\n', KR_LAZY),
+        ('    saved_pw = bool(old.get("cert_name") and keyring.get_password(teacher_config.KEYRING_SERVICE, old["cert_name"]))\n'
+         '    label(r, "③ 인증서 암호", "이미 저장돼 있어요 — 바꿀 때만 넣으세요" if saved_pw else "나이스 로그인할 때 넣는 그 암호")\n',
+         PW_CHECK_NEW),
+        ('    (pw if not saved_pw else region).focus_set()\n', '    pw.focus_set()\n'),
     ],
     # 키트 설정 창이 바로가기를 만들 때도 «업무위젯» 이름·새 아이콘을 쓰게 한다
     "widget/바로가기_설정.py": [
+        ('import keyring  # noqa: E402\n', KR_LAZY),
         ('"나이스 에듀파인 바로가기.lnk"', '"업무위젯.lnk"'),
         ('% (lnk, pyw, target, HERE, pyw))', '% (lnk, pyw, target, HERE, HERE / "업무위젯.ico"))'),
         ('old.get("work_start", "08:40")', 'old.get("work_start", "08:00")'),
@@ -98,8 +141,7 @@ from googleapiclient.discovery import build
 
 import school_calendar
 import teacher_config
-''', '''import keyring
-import teacher_config
+''', '''import teacher_config
 
 
 class _Lazy:
@@ -125,6 +167,7 @@ def _load_school_calendar():
 
 InstalledAppFlow = _Lazy(_load_flow)
 school_calendar = _Lazy(_load_school_calendar)
+keyring = _Lazy(lambda: __import__("keyring"))
 
 
 def build(*args, **kwargs):
