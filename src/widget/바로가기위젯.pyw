@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""업무 위젯 — 시계 · 업무포털 · 나이스 ▾ · 에듀파인 ▾ · DJE Talk 단추 + 에듀파인 결재대기·통합관리 기관접수대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
+"""업무 위젯 — 윗줄: 날짜·요일·시계 + 통합관리 기관접수대기 / 아랫줄: 업무포털 · 나이스 ▾ · 에듀파인 ▾ · DJE Talk · 업무전용 ▾ + 에듀파인 결재대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
 
 키트의 «바로가기위젯.pyw» 를 이 파일로 바꿔 끼워 쓴다 (설치 파일이 원본을 «바로가기위젯_원본.pyw» 로 보관한다).
 한 개만 뜨기·바탕화면/시작프로그램 바로가기·설정 창의 «위젯 켜기»·화면 밖 되돌리기는 원본의 것을 그대로 가져다 쓴다.
@@ -9,7 +9,7 @@
   나이스   — 인증서 로그인 후 나이스 화면까지
   내부기안 — 에듀파인 공용서식 «표준 서식(결재4인,협조4인)» 빈 기안 창
   품의등록 — 에듀파인 학교회계 > 사업담당 > 품의/정산 > 품의등록 빈 화면
-  «▾» 단추(나이스·에듀파인)는 누르면 칸 한 줄을 아래로(화면 아래가 모자라면 위로) 펼친다 — SUBMENUS 참고.
+  «▾» 단추(나이스·에듀파인·업무전용)는 누르면 칸 한 줄을 아래로(화면 아래가 모자라면 위로) 펼친다 — SUBMENUS 참고.
   펼친 칸의 하위 메뉴는 work_widget_menu.py 가 연다 (나이스: 메뉴 글자를 차례로 누름 / 에듀파인: 메뉴ID 로 gfnOpenMenu).
 모두 신청·저장·결재·상신은 하지 않는다. 인증서 암호는 이 파일이 다루지 않는다 (키트가 자격 증명 관리자에서 읽는다).
 """
@@ -71,6 +71,10 @@ except Exception:
     UI_PCT = 100
 if UI_PCT not in [c[0] for c in SIZE_CHOICES]:
     UI_PCT = 100
+try:                                     # «업무전용 칸 쓰기» (⚙ → 화면) — 끄면 예전 배치: 월·일 따로, 아랫줄에 결재대기·기관접수 (바꾸면 위젯을 다시 켠다)
+    MINE_ON = bool(K.load_state().get("mine_tile", True))
+except Exception:
+    MINE_ON = True
 DPI = _screen_dpi()
 SC = DPI * UI_PCT / 100.0              # 그림 크기 배율 (글자는 윈도우가 화면 배율을 따로 곱해 주므로 UI_PCT 만)
 
@@ -115,7 +119,8 @@ def fit_font(text, max_w, size=8, bold=True, smallest=6):
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
-          "dje": ("#2b5148", "#d4e9e2", "#eef6f2"), "edu": ("#1E3932", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
+          "dje": ("#2b5148", "#d4e9e2", "#eef6f2"), "edu": ("#1E3932", "#d4e9e2", "#eef6f2"),
+          "mine": ("#7a5a12", "#f3e6c4", "#fbf5e6")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
 
 JOBS = {
     "portal": ("open_portal.py", "업무포털 메인 화면을 열었습니다", "✅ 업무포털 메인 화면을 열었습니다"),
@@ -127,7 +132,8 @@ JOBS = {
     "dje":    ("open_dje.py", "DJE 메신저에 로그인했습니다", "✅ DJE 메신저에 로그인했습니다"),
 }
 BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스"), ("edu", "📁", "3. 에듀파인"), ("dje", "💬", "4. DJE Talk")]
-BUTTON_NOT_DJE = ("gian", "📝", "4. 내부기안")      # DJE Talk 는 대전교육청 메신저 — 지역이 대전이 아니면 4번 칸은 내부기안
+BUTTON_NOT_DJE = ("gian", "📝", "4. 내부기안")
+BUTTON_MINE = ("mine", "⭐", "5. 업무전용")         # 선생님이 직접 넣는 프로그램·사이트·폴더 칸 (펼침 메뉴, 처음엔 비어 있다)      # DJE Talk 는 대전교육청 메신저 — 지역이 대전이 아니면 4번 칸은 내부기안
 # «▾» 단추를 누르면 위젯 아래(화면 아래가 모자라면 위)로 펼쳐지는 칸들 — (칸 글자, 상태 줄 이름, 할 일)
 # 할 일: JOBS 의 열쇠(문자열) 또는 ("neis", [[메뉴, 단계]…]) / ("edufine", 에듀파인 메뉴ID) — work_widget_menu.py 가 연다
 SUBMENUS = {
@@ -140,12 +146,15 @@ SUBMENUS = {
             ("문서등록\n대장", "문서등록대장", ("edufine", "A00AAB0107001")),
             ("품의목록", "품의목록", ("edufine", "A00FAA0104001002")),
             ("사업관리\n카드(담당)", "사업관리카드(담당)", ("edufine", "A00FAA0101001"))],
+    "mine": [],
 }
 SUB_COLS = 6
 CREDIT = "만든 사람 · 대전동산고 J.S."           # 제목에 마우스를 올렸을 때만 보인다
 SUB_MAX = 12                     # 펼침 칸은 두 줄(12칸)까지
 SUB_IDLE_S = 10                  # 펼친 채 마우스가 위젯 밖에 이만큼 있으면 저절로 접는다
-SUB_BUILTIN = {"neis": [("나이스 첫 화면", "neis")], "edu": [("내부기안", "gian"), ("품의등록", "pumui")]}   # 메뉴를 안 읽어도 고를 수 있는 것
+SUB_BUILTIN = {"neis": [("나이스 첫 화면", "neis")], "edu": [("내부기안", "gian"), ("품의등록", "pumui")], "mine": []}   # 메뉴를 안 읽어도 고를 수 있는 것
+GUIDE_FILE = "사용설명서.html"                 # 위젯 폴더에 같이 들어가는 사용설명서 (build.py 가 안내서.html 을 넣는다)
+GUIDE_URL = "https://github.com/husky7025/work-widget/blob/main/%EC%95%88%EB%82%B4%EC%84%9C.md"   # 파일이 없을 때 (안내서.md)
 MENUS_FILE_NAME = "work_widget_menus.json"   # work_widget_menu.py read 가 적는 «내 메뉴» 목록 (키트 폴더)
 
 
@@ -235,14 +244,27 @@ def sub_load(st):
     out = sub_defaults()
     saved = st.get("submenus")
     if isinstance(saved, dict):
-        for k in ("neis", "edu"):
+        for k in SUBMENUS:
             v = saved.get(k)
             if isinstance(v, list):
                 items = [x for x in v if isinstance(x, dict) and isinstance(x.get("name"), str) and sub_job_ok(x.get("job"))]
                 out[k] = items[:SUB_MAX]
     return out
-CLOCK_KEYS = ("mo", "dd", "wk", "hh", "mi", "ss")
-CLOCK_LABEL = {"mo": "월", "dd": "일", "wk": "요일", "hh": "시", "mi": "분", "ss": "초"}
+# md = 날짜(11/21) — 업무전용 칸을 쓰면 «월»«일» 두 카드를 한 칸으로 합쳐 자리를 만든다
+CLOCK_KEYS = ("md", "wk", "hh", "mi", "ss") if MINE_ON else ("mo", "dd", "wk", "hh", "mi", "ss")
+CLOCK_LABEL = {"md": "날짜", "mo": "월", "dd": "일", "wk": "요일", "hh": "시", "mi": "분", "ss": "초"}
+
+
+def clock_saved_on(saved):
+    """저장된 «켠 시계 카드» — 배치가 바뀌어도 이어지게: 월·일 중 하나라도 켰으면 날짜 카드를, 날짜 카드를 켰으면 월·일 카드를 켠다."""
+    if not isinstance(saved, list):
+        return {k: True for k in CLOCK_KEYS}
+    s = set(saved)
+    if "mo" in s or "dd" in s:
+        s.add("md")
+    if "md" in s:
+        s.update(("mo", "dd"))
+    return {k: k in s for k in CLOCK_KEYS}
 SANCTN_EVERY_MS =30 * 60 * 1000        # 에듀파인 결재대기 건수를 30분마다 읽는다 (읽기만 함)
 
 
@@ -424,8 +446,11 @@ class FlipCard:
     FRAMES = 6
     DELAY = 32
 
-    def __init__(self, canvas, cx, cy, bg, color, top=None, bottom=None, line=None):
+    def __init__(self, canvas, cx, cy, bg, color, top=None, bottom=None, line=None, w=None, font_px=21):
         self.c, self.bg, self.color = canvas, bg, color
+        if w:
+            self.W = w
+        self.font_px = font_px
         self.top, self.bottom, self.line = top or self.TOP, bottom or self.BOTTOM, line or self.LINE
         self.cache = {}
         self.cur = None
@@ -445,7 +470,7 @@ class FlipCard:
         card = Image.new("RGB", (W, H), self.bg)
         card.paste(base, (0, 0), mask)
         d = ImageDraw.Draw(card)
-        d.text((W // 2, H // 2), text, font=ImageFont.truetype(_FLIP_FONT, px(21) * S), fill=self.color, anchor="mm")
+        d.text((W // 2, H // 2), text, font=ImageFont.truetype(_FLIP_FONT, px(self.font_px) * S), fill=self.color, anchor="mm")
         d.line((0, H // 2, W, H // 2), fill=self.line, width=max(2, S // 2))
         im = card.resize((self.W, self.H), Image.LANCZOS)
         self.cache[text] = im
@@ -556,12 +581,12 @@ class Widget:
         self.tiles = []
         self.clock = {}
         self.cards = {}
-        # 윗줄: 월 일 요일 시 분 초 — 따로 된 줄(clock_row)에 둬서, 끈 카드는 빠지고 남은 카드끼리 붙는다
+        # 윗줄: 날짜 요일 시 분 초 + 기관접수대기 — 시계 카드는 따로 된 줄(clock_row, 앞 5칸)에 둬서 끈 카드는 빠지고 남은 카드끼리 붙는다.
+        # 기관접수대기 칸은 맨 오른쪽(6번째) 자리에 고정 — 아랫줄 결재대기 칸 바로 위 (업무전용 칸을 끄면 예전처럼 아랫줄 끝)
         self.clock_row = tk.Frame(grid, bg=PANEL)
-        self.clock_row.grid(row=0, column=0, columnspan=6)
+        self.clock_row.grid(row=0, column=0, columnspan=5 if MINE_ON else 6)
         self.bind_drag(self.clock_row)
-        saved = st.get("clock_cards")
-        self.clock_on = {k: (k in saved) if isinstance(saved, list) else True for k in CLOCK_KEYS}
+        self.clock_on = clock_saved_on(st.get("clock_cards"))
         self.clock_vars = {}
         for i, key in enumerate(CLOCK_KEYS):
             c = self.make_tile(self.clock_row, 0, i)
@@ -569,18 +594,21 @@ class Widget:
             c.create_text(TILE // 2, px(47), text=label, fill=GREEN, font=F(7, True))
             if key == "ss":
                 c.itemconfigure("edge", fill="#eef6f2", outline="#a9cdbf")
+            wide = key == "md"                   # «11/21» 다섯 글자 — 카드를 넓히고 글자를 줄인다
             if HAVE_FLIP:
                 num = None
                 self.cards[key] = FlipCard(c, TILE // 2, px(24), "#eef6f2" if key == "ss" else TILE_BG,
                                            GREEN if key == "ss" else WHITE,
                                            top="#e3f0ea" if key == "ss" else None, bottom="#d4e9e2" if key == "ss" else None,
-                                           line="#a9cdbf" if key == "ss" else None)
+                                           line="#a9cdbf" if key == "ss" else None,
+                                           w=px(54) if wide else None, font_px=15 if wide else 21)
             else:
-                num = c.create_text(TILE // 2, px(26), text="--", fill=GREEN if key == "ss" else WHITE, font=F(18, True))
+                num = c.create_text(TILE // 2, px(26), text="--", fill=GREEN if key == "ss" else WHITE,
+                                    font=F(13 if wide else 18, True))
             self.clock[key] = (c, num)
             self.clock_vars[key] = tk.BooleanVar(value=self.clock_on[key])
-        # 아랫줄: 단추 4 + 결재대기 칸 + 기관접수대기 칸 (투명도는 ⚙ 메뉴)
-        self.sub_tiles = {}          # 펼침 단추(나이스 ▾ · 에듀파인 ▾)의 칸
+        # 아랫줄: 단추 4 + 업무전용 ▾ + 결재대기 칸 (투명도는 ⚙ 메뉴)
+        self.sub_tiles = {}          # 펼침 단추(나이스 ▾ · 에듀파인 ▾ · 업무전용 ▾)의 칸
         self.sub_open = None         # 지금 펼친 단추 (없으면 None)
         self.sub_frame = None
         self.sub_extra = 0           # 펼쳐서 늘어난 높이
@@ -590,7 +618,9 @@ class Widget:
         self.sub_idle = 0
         self.picker = None
         buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
-        lab_font = min((fit_font(b[2], TILE - px(8)) for b in buttons), key=lambda f: f[1])   # 네 칸 모두 같은 크기로
+        if MINE_ON:
+            buttons = buttons + [BUTTON_MINE]
+        lab_font = min((fit_font(b[2], TILE - px(8)) for b in buttons), key=lambda f: f[1])   # 다섯 칸 모두 같은 크기로
         for i, (kind, icon, label) in enumerate(buttons):
             c = self.make_tile(grid, 2, i, hand=True)
             acc, badge, tint = ACCENT[kind]
@@ -605,7 +635,7 @@ class Widget:
                 c.bind("<Button-1>", lambda e, k=kind: self.click(k))
             c.bind("<Enter>", lambda e, w=c, a=acc, tt=tint: w.itemconfigure("edge", outline=a, fill=tt))
             c.bind("<Leave>", lambda e, w=c, k=kind: self.sub_open != k and w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
-        sc = self.make_tile(grid, 2, 4, hand=True)
+        sc = self.make_tile(grid, 2, 5 if MINE_ON else 4, hand=True)
         self.sanctn_cv = sc
         self.sanctn_num = sc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         self.sanctn_lab = sc.create_text(TILE // 2, px(44), text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
@@ -616,7 +646,7 @@ class Widget:
         sc.bind("<Leave>", lambda e: self.paint_sanctn())
         self.sanctn_busy = False
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
-        jc = self.make_tile(grid, 2, 5, hand=True)
+        jc = self.make_tile(grid, *((0, 5) if MINE_ON else (2, 5)), hand=True)
         self.jeopsu_cv = jc
         self.jeopsu_num = jc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         jc.create_text(TILE // 2, px(44), text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
@@ -644,7 +674,7 @@ class Widget:
             cm.add_checkbutton(label=CLOCK_LABEL[key], variable=self.clock_vars[key], command=self.apply_clock)
         cm.add_separator()
         cm.add_command(label="모두 켜기", command=lambda: self.set_all_clock(True))
-        cm.add_command(label="모두 끄기 (위젯이 작아져요)", command=lambda: self.set_all_clock(False))
+        cm.add_command(label="모두 끄기" if MINE_ON else "모두 끄기 (위젯이 작아져요)", command=lambda: self.set_all_clock(False))
         vm.add_cascade(label="시계 카드 보이기", menu=cm)
         om = tk.Menu(vm, tearoff=0, font=F(10))
         for pct in range(100, 20, -10):
@@ -656,8 +686,10 @@ class Widget:
         for pct, name in SIZE_CHOICES:
             sm.add_radiobutton(label=name, value=pct, variable=self.size_var, command=self.on_size)
         vm.add_cascade(label="위젯 크기", menu=sm)
+        self.mine_var = tk.BooleanVar(value=MINE_ON)
+        vm.add_checkbutton(label="업무전용 칸 쓰기 (끄면 예전 배치 · 위젯이 다시 켜져요)", variable=self.mine_var, command=self.on_mine)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
-        self.m.add_command(label="펼침 메뉴 고르기 (나이스·에듀파인)", command=self.open_picker)
+        self.m.add_command(label="펼침 메뉴 고르기 (나이스·에듀파인%s)" % ("·업무전용" if MINE_ON else ""), command=self.open_picker)
         am = tk.Menu(self.m, tearoff=0, font=F(10))       # 자동 실행·알림 ▸ 켜고 끄는 항목들
         am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
@@ -668,11 +700,12 @@ class Widget:
             am.add_checkbutton(label="위젯을 켤 때 DJE 메신저 자동 로그인", variable=self.dje_auto_var, command=self.toggle_dje_auto)
         self.m.add_cascade(label="자동 실행·알림", menu=am)
         # DJE 메신저 로그인은 4번 단추(DJE Talk)로 옮겼다 — 메뉴에는 «켤 때 자동 로그인» 켜고 끄기만 남긴다
-        hm = tk.Menu(self.m, tearoff=0, font=F(10))       # 도움말 ▸ 업데이트·문제 해결
+        hm = tk.Menu(self.m, tearoff=0, font=F(10))       # 도움말 ▸ 사용설명서·업데이트·문제 해결
+        hm.add_command(label="사용설명서", command=self.open_guide)
         hm.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
                        command=lambda: self.check_update(manual=True))
         hm.add_command(label="문제 해결용 기록 복사 (붙여넣어 보내기)", command=self.copy_support)
-        self.m.add_cascade(label="도움말 (업데이트·문제 해결)", menu=hm)
+        self.m.add_cascade(label="도움말 (사용설명서·업데이트·문제 해결)", menu=hm)
         self.upd_busy = False
         self.upd_start_pending = True                     # 켤 때 한 번 확인 (성공하면 got_update 에서 내린다)
         self.m.add_separator()
@@ -680,7 +713,7 @@ class Widget:
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
         self.apply_clock(save=False)
 
-    # ── 시계 카드 켜기·끄기 (모두 끄면 윗줄이 빠지고 위젯 높이가 줄어든다) ──
+    # ── 시계 카드 켜기·끄기 (끈 카드는 빠지고 남은 카드끼리 붙는다. 예전 배치에서 모두 끄면 윗줄이 빠지고 위젯 높이가 줄어든다) ──
     def set_all_clock(self, on):
         for v in self.clock_vars.values():
             v.set(on)
@@ -699,7 +732,7 @@ class Widget:
             self.clock_row.grid()
         else:
             self.clock_row.grid_remove()
-        self.base_h = SIZE_H if on else SIZE_H - (TILE + GAP)
+        self.base_h = SIZE_H if (on or MINE_ON) else SIZE_H - (TILE + GAP)   # 업무전용 배치는 윗줄에 기관접수대기 칸이 있어서 높이 그대로
         self.set_height(self.base_h)
         if save:
             try:
@@ -730,7 +763,11 @@ class Widget:
     def open_sub(self, kind):
         items = self.submenus.get(kind) or []
         if not items:
-            self.say("펼칠 메뉴가 없어요 — ⚙ → 펼침 메뉴 고르기에서 넣어 주세요", "#c82014")
+            if kind == "mine":
+                self.say("업무전용 칸이 비어 있어요 — «＋ 내 프로그램 넣기»로 넣어 주세요", "#00754A")
+                self.open_picker("mine")
+            else:
+                self.say("펼칠 메뉴가 없어요 — ⚙ → 펼침 메뉴 고르기에서 넣어 주세요", "#c82014")
             return
         acc, badge, tint = ACCENT[kind]
         rows = (len(items) + SUB_COLS - 1) // SUB_COLS
@@ -867,10 +904,12 @@ class Widget:
     def read_menus(self):
         self.click(("work_widget_menu.py", ("read",), "✅  메뉴를 읽었습니다", "✅ 내 메뉴를 읽었어요 — 고르는 창에 목록이 나와요"))
 
-    def open_picker(self):
+    def open_picker(self, tab=None):
         if self.picker is not None and self.picker.winfo_exists():
             self.picker.deiconify()
             self.picker.lift()
+            if tab in getattr(self, "picker_tabs", {}):
+                self.picker_nb.select(self.picker_tabs[tab])
             return
         self.close_sub()
         top = tk.Toplevel(self.root)
@@ -885,7 +924,8 @@ class Widget:
         sty = ttk.Style(top)
         sty.configure("Treeview", font=F(9), rowheight=px(22))
         sty.configure("TNotebook.Tab", font=F(9, True), padding=(px(12), px(4)))
-        chosen = {k: [dict(x) for x in self.submenus.get(k, [])] for k in ("neis", "edu")}
+        kinds = ("neis", "edu", "mine") if MINE_ON else ("neis", "edu")      # 업무전용 칸을 끄면 그 탭은 숨기고, 넣어 둔 목록은 그대로 둔다
+        chosen = {k: [dict(x) for x in self.submenus.get(k, [])] for k in kinds}
         state = {"cat": self.load_catalog(), "mtime": self._menus_mtime()}
 
         def key(job):
@@ -894,7 +934,9 @@ class Widget:
         def options(kind):
             out = [{"name": n, "job": j, "group": "기본", "crumb": ""} for n, j in SUB_BUILTIN[kind]]
             cat = state["cat"] or {}
-            if kind == "neis":
+            if kind == "mine":
+                pass
+            elif kind == "neis":
                 out += [{"name": m["name"], "job": ["neis", m["path"]], "group": m["group"], "crumb": m.get("crumb", "")}
                         for m in cat.get("neis", []) if isinstance(m, dict) and "path" in m]
             else:
@@ -911,12 +953,16 @@ class Widget:
         nb = ttk.Notebook(top)
         nb.pack(fill="both", expand=True, padx=px(10))
         views = {}
-        for kind, title in (("neis", "  나이스 ▾  "), ("edu", "  에듀파인 ▾  ")):
+        self.picker_nb, self.picker_tabs = nb, {}
+        titles = {"neis": "  나이스 ▾  ", "edu": "  에듀파인 ▾  ", "mine": "  업무전용 ▾  "}
+        for kind, title in ((k, titles[k]) for k in kinds):
             f = tk.Frame(nb, bg=PANEL)
             nb.add(f, text=title)
+            self.picker_tabs[kind] = f
             lf = tk.Frame(f, bg=PANEL)
             lf.pack(side="left", fill="both", expand=True, padx=(px(6), px(4)), pady=px(6))
-            tk.Label(lf, text="전체 메뉴 — 눌러서 넣기 / 빼기", bg=PANEL, fg=WHITE, font=F(9, True), anchor="w").pack(fill="x")
+            tk.Label(lf, text="오른쪽 [＋ 내 프로그램 넣기]로 프로그램·사이트·폴더를 넣으세요" if kind == "mine"
+                     else "전체 메뉴 — 눌러서 넣기 / 빼기", bg=PANEL, fg=WHITE, font=F(9, True), anchor="w").pack(fill="x")
             tvf = tk.Frame(lf, bg=PANEL)
             tvf.pack(fill="both", expand=True)
             tv = ttk.Treeview(tvf, show="tree", height=16, selectmode="browse")
@@ -1108,7 +1154,7 @@ class Widget:
                 fill(k)
 
         def save():
-            self.submenus = {k: [dict(x) for x in chosen[k]] for k in chosen}
+            self.submenus = dict(self.submenus, **{k: [dict(x) for x in chosen[k]] for k in chosen})
             K.save_state(submenus=self.submenus)
             self.say("✅ 펼침 메뉴를 저장했어요", "#00754A")
             close()
@@ -1142,6 +1188,8 @@ class Widget:
         w, h = max(top.winfo_reqwidth(), px(560)), top.winfo_reqheight()
         top.geometry("%dx%d+%d+%d" % (w, h, max(0, (top.winfo_screenwidth() - w) // 2), max(0, (top.winfo_screenheight() - h) // 3)))
         top.after(1500, watch)
+        if tab in self.picker_tabs:
+            nb.select(self.picker_tabs[tab])
 
     def _menus_mtime(self):
         try:
@@ -1387,6 +1435,33 @@ class Widget:
             return
         K.save_state(ui_scale=v)
         self.say("크기를 바꾸려고 위젯을 다시 켜요…", "#5c5c5c")
+        self.save_pos()
+        self.root.after(300, self.relaunch)
+
+    def open_guide(self):
+        """사용설명서 — 위젯 폴더의 사용설명서.html (설치·업데이트 때 같이 들어온다). 없으면 인터넷 안내서."""
+        p = HERE0 / GUIDE_FILE
+        try:
+            if p.exists():
+                os.startfile(str(p))
+            else:
+                import webbrowser
+                webbrowser.open(GUIDE_URL)
+        except OSError as e:
+            K.log_line("업무위젯 사용설명서 열기 실패: %s" % type(e).__name__)
+            self.say("⚠️ 사용설명서를 열지 못했어요", "#c82014")
+
+    def on_mine(self):
+        """업무전용 칸 쓰기/끄기 — 칸 배치가 바뀌므로 저장한 뒤 위젯을 다시 켠다 (넣어 둔 업무전용 목록은 지우지 않는다)."""
+        v = self.mine_var.get()
+        if v == MINE_ON:
+            return
+        if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy:
+            self.mine_var.set(MINE_ON)
+            self.say("하던 작업이 끝난 뒤 바꿔 주세요", "#c82014")
+            return
+        K.save_state(mine_tile=v)
+        self.say("칸 배치를 바꾸려고 위젯을 다시 켜요…", "#5c5c5c")
         self.save_pos()
         self.root.after(300, self.relaunch)
 
@@ -1861,7 +1936,7 @@ class Widget:
     def tick(self):
         self.root.after(1000 - datetime.now().microsecond // 1000, self.tick)
         d = datetime.now()
-        vals = {"mo": "%02d" % d.month, "dd": "%02d" % d.day, "wk": "월화수목금토일"[d.weekday()],
+        vals = {"md": "%d/%d" % (d.month, d.day), "mo": "%02d" % d.month, "dd": "%02d" % d.day, "wk": "월화수목금토일"[d.weekday()],
                 "hh": "%02d" % d.hour, "mi": "%02d" % d.minute, "ss": "%02d" % d.second}
         for key, (cv, item) in self.clock.items():
             if key in self.cards:

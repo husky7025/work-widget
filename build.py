@@ -235,6 +235,7 @@ def main():
     for f in (SRC / "widget").iterdir():
         if f.is_file():
             shutil.copy2(f, wdir / f.name)
+    shutil.copy2(HERE / "안내서.html", wdir / "사용설명서.html")     # 위젯 ⚙ → 도움말 → 사용설명서 (업데이트로도 바뀐다)
     for f in (SRC / "kit").iterdir():
         if f.is_file() and f.suffix in (".py", ".pyw"):
             shutil.copy2(f, stage / f.name)
