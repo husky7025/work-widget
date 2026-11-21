@@ -38,12 +38,26 @@ user32.GetWindowRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
 user32.PostMessageW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.ScreenToClient.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
 kernel32.OpenProcess.restype = wintypes.HANDLE
+user32.SendMessageTimeoutW.argtypes = [wintypes.HWND, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM,
+                                       wintypes.UINT, wintypes.UINT, ctypes.POINTER(ctypes.c_size_t)]
+user32.SendMessageTimeoutW.restype = ctypes.c_ssize_t
+SMTO_ABORTIFHUNG = 0x0002
+
+
+def send(hwnd, msg, wparam=0, lparam=0, timeout_ms=1500):
+    """SendMessage 인데 창이 응답 없음이면 기다리지 않고 None 을 돌려준다. (DJE Talk 가 멈춰도 이 쪽이 같이 멈추지 않게)"""
+    res = ctypes.c_size_t(0)
+    ok = user32.SendMessageTimeoutW(hwnd, msg, wparam, lparam, SMTO_ABORTIFHUNG, timeout_ms, ctypes.byref(res))
+    return res.value if ok else None
 
 
 def text_of(hwnd):
-    n = user32.SendMessageW(hwnd, WM_GETTEXTLENGTH, 0, 0)
+    n = send(hwnd, WM_GETTEXTLENGTH)
+    if not n:
+        return ""
     buf = ctypes.create_unicode_buffer(n + 1)
-    user32.SendMessageW(hwnd, WM_GETTEXT, n + 1, ctypes.addressof(buf))
+    if send(hwnd, WM_GETTEXT, n + 1, ctypes.addressof(buf)) is None:
+        return ""
     return buf.value
 
 
@@ -136,16 +150,7 @@ def get_pw():
 
 
 def find_exe():
-    """DJE Talk 실행 파일 위치: 이미 떠 있으면 그 경로 → 설치 기록(레지스트리) → 흔한 위치."""
-    try:
-        import subprocess
-        out = subprocess.run(["powershell", "-NoProfile", "-Command",
-                              "(Get-Process ucware_m -ErrorAction SilentlyContinue | Select-Object -First 1).Path"],
-                             capture_output=True, text=True, timeout=15, creationflags=0x08000000).stdout.strip()
-        if out and os.path.isfile(out):
-            return out
-    except Exception:
-        pass
+    """DJE Talk 실행 파일 위치: 설치 기록(레지스트리) → 흔한 위치. (꺼져 있을 때만 부른다)"""
     try:
         import winreg
         base = r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall"
@@ -210,6 +215,16 @@ def on_login_screen(main_hwnd):
     return False
 
 
+LOGIN_ASPECT = 385 / 550   # 로그인 화면 창의 가로/세로 비율 (단추 위치를 잡은 기준)
+
+
+def login_layout_ok(main_hwnd):
+    """창 비율이 기준(385x550)과 많이 다르면 화면이 바뀐 것이다 — 엉뚱한 곳을 누르지 않도록 클릭하지 않는다."""
+    r = rect_of(main_hwnd)
+    w, h = r.right - r.left, r.bottom - r.top
+    return h > 0 and abs(w / h - LOGIN_ASPECT) / LOGIN_ASPECT < 0.18
+
+
 def click_login(main_hwnd):
     """[Login] 버튼 자리에 마우스 클릭 메시지를 보낸다. (PostMessage: 인증서 창이 떠도 멈추지 않음)
     화면 배율(125%·150% 등)이 달라도 맞도록, 이 스레드를 DJE Talk 창과 같은 DPI 방식으로 맞춘 채 좌표를 계산한다."""
@@ -255,7 +270,7 @@ def process_running():
     try:
         import subprocess
         out = subprocess.run(["tasklist", "/FI", "IMAGENAME eq ucware_m.exe", "/FO", "CSV", "/NH"],
-                             capture_output=True, text=True, timeout=15, creationflags=0x08000000).stdout
+                             capture_output=True, text=True, encoding="mbcs", errors="replace", timeout=15, creationflags=0x08000000).stdout or ""
         return "ucware_m.exe" in out.lower()
     except Exception:
         return False
@@ -301,12 +316,23 @@ def start_and_open_cert_dialog():
         main_hwnd = find_main()
         if main_hwnd and clicks < 2 and on_login_screen(main_hwnd) and time.time() - last_click > 8:
             time.sleep(1.0)  # 화면이 다 그려질 때까지
+            if not login_layout_ok(main_hwnd):
+                print("❌ DJE Talk 로그인 화면 모양이 달라져 [Login] 단추 위치를 믿을 수 없습니다. 직접 [Login]을 눌러 주세요.")
+                return "LAYOUT"
             print("[Login]을 누릅니다." if clicks == 0 else "[Login]을 한 번 더 누릅니다.")
             click_login(main_hwnd)
             clicks += 1
             last_click = time.time()
         time.sleep(0.2)
-    return None
+    # 시간 안에 인증서 창이 안 떴다 — 어느 단계에서 막혔는지 알려준다
+    m = find_main()
+    if m is None:
+        print("❌ DJE Talk 창이 나타나지 않았습니다. 프로그램이 켜졌는지 작업표시줄·트레이를 확인하세요.")
+    elif on_login_screen(m):
+        print("❌ 로그인 화면은 보이는데 [Login]을 눌러도 인증서 창이 뜨지 않았습니다. 직접 [Login]을 눌러 보세요.")
+    else:
+        print("❌ 로그인 화면이 아니고 인증서 창도 없습니다. 이미 로그인됐거나 다른 화면일 수 있어요.")
+    return "SHOWN"
 
 
 def main():
@@ -318,12 +344,13 @@ def main():
     dlg = start_and_open_cert_dialog()
     if dlg == "NO_EXE":
         return 7
+    if dlg == "LAYOUT":
+        return 9
+    if dlg == "SHOWN":          # 이유는 위에서 이미 알렸다
+        return 1
     if dlg == "LOGGED_IN":
         print("✅ DJE 메신저에 로그인했습니다 (이미 로그인돼 있었어요)")
         return 0
-    if not dlg:
-        print("❌ 인증서 창이 뜨지 않았습니다. 이미 로그인되어 있거나 로그인 화면을 못 찾았습니다. 아무것도 입력하지 않았습니다.")
-        return 1
     time.sleep(0.7)  # 창이 다 그려질 때까지
 
     parts = inspect(dlg)
@@ -332,7 +359,7 @@ def main():
         return 2
     edit, ok, lst = parts
 
-    if user32.SendMessageW(lst, LVM_GETSELECTEDCOUNT, 0, 0) < 1:
+    if not send(lst, LVM_GETSELECTEDCOUNT):
         print("❌ 인증서가 선택되어 있지 않습니다. 선생님이 인증서를 고른 뒤 다시 실행해 주세요.")
         return 3
 
@@ -349,8 +376,11 @@ def main():
 
     buf = ctypes.create_unicode_buffer(pw)
     pw = None
-    user32.SendMessageW(edit, WM_SETTEXT, 0, ctypes.addressof(buf))
+    sent = send(edit, WM_SETTEXT, 0, ctypes.addressof(buf), timeout_ms=5000)
     ctypes.memset(buf, 0, ctypes.sizeof(buf))  # 메모리에서 바로 지움
+    if sent is None:
+        print("❌ 인증서 창이 응답하지 않아 비밀번호를 넣지 못했습니다. DJE Talk 창을 확인하세요.")
+        return 8
     time.sleep(0.2)
     user32.PostMessageW(ok, BM_CLICK, 0, 0)  # Post: 로그인이 길어져도 이 쪽이 멈추지 않게
     # 로그인이 끝났는지 본다: 인증서 창이 닫히고 로그인 화면이 사라지면 성공

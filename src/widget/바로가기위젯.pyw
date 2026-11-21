@@ -11,6 +11,7 @@
   품의등록 — 에듀파인 학교회계 > 사업담당 > 품의/정산 > 품의등록 빈 화면
 모두 신청·저장·결재·상신은 하지 않는다. 인증서 암호는 이 파일이 다루지 않는다 (키트가 자격 증명 관리자에서 읽는다).
 """
+import contextlib
 import importlib.machinery
 import importlib.util
 import re
@@ -389,6 +390,7 @@ class Widget:
         round_rect(self.bgc, 1, 1, SIZE_W - 2, SIZE_H - 2, px(16), fill=PANEL, outline="#d6d1c6", width=1)
         tk.Misc.lower(self.bgc)
         self.busy = None
+        self.dje_busy = False                 # DJE 메신저 로그인 중 (크롬을 안 쓰므로 self.busy 와 따로 센다)
         self.lock = threading.Lock()
         self.dragging = False
         self.ticks = 0
@@ -612,12 +614,19 @@ class Widget:
         self.status.configure(text=text, fg=color)
 
     def click(self, kind):
-        if self.sanctn_busy or self.jeopsu_busy:        # 건수 자동 조회가 같은 포털 탭을 쓰는 중이면 끝난 뒤에
-            self.say("건수를 읽는 중이에요 — 잠시 뒤 다시 눌러 주세요", "#c82014")
-            return
-        if self.busy:
-            self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#c82014")
-            return
+        is_dje = (kind == "dje")
+        if is_dje:
+            # DJE 메신저는 크롬(포털 탭)을 쓰지 않으니 포털·건수 작업과 따로 돈다. DJE끼리만 겹치지 않게 한다.
+            if self.dje_busy:
+                self.say("DJE 메신저 로그인이 이미 진행 중입니다", "#c82014")
+                return
+        else:
+            if self.sanctn_busy or self.jeopsu_busy:        # 건수 자동 조회가 같은 포털 탭을 쓰는 중이면 끝난 뒤에
+                self.say("건수를 읽는 중이에요 — 잠시 뒤 다시 눌러 주세요", "#c82014")
+                return
+            if self.busy:
+                self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#c82014")
+                return
         script, done, done_msg = JOBS[kind]
         if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not (KIT / script).exists():
             self.say("키트 파일을 찾지 못했습니다 (%s) — 업무위젯 설치를 다시 실행하세요" % script)
@@ -625,18 +634,27 @@ class Widget:
         if not K.configured():
             self.say("먼저 ⚙ → 환경설정 (지역·인증서·암호)", "#c82014")
             return
-        self.busy = "로그인 중"
-        self.say("⏳ DJE 메신저 로그인 중… (몇 초간 마우스를 만지지 마세요)" if kind == "dje" else "⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
-        threading.Thread(target=self.run_job, args=(script, done, done_msg), daemon=True).start()
+        if is_dje:
+            self.dje_busy = True
+        else:
+            self.busy = "로그인 중"
+        self.say("⏳ DJE 메신저 로그인 중… (다른 단추는 그대로 쓸 수 있어요)" if is_dje else "⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
+        threading.Thread(target=self.run_job, args=(script, done, done_msg, is_dje), daemon=True).start()
 
-    def run_job(self, script, done, done_msg):
+    def run_job(self, script, done, done_msg, is_dje=False):
         t0 = time.time()
         last = ""
         ok = False
+        timer = None
         try:
-            with self.lock:
+            # DJE 로그인은 크롬 잠금(self.lock)을 쓰지 않는다. 대신 멈춘 창에 걸려도 150초 뒤엔 스스로 끊는다.
+            with (contextlib.nullcontext() if is_dje else self.lock):
                 p = subprocess.Popen([str(K.PY), "-X", "utf8", str(KIT / script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace", env=K.ENV, cwd=str(KIT), creationflags=K.NO_WINDOW)
+                if is_dje:
+                    timer = threading.Timer(150, p.kill)
+                    timer.daemon = True
+                    timer.start()
                 tail = []
                 for line in p.stdout:
                     line = line.strip()
@@ -652,11 +670,18 @@ class Widget:
                         self.root.after(0, self.say, "⚠️ " + last, "#c82014")
                 p.wait()
             if p.returncode != 0 and not ok:
+                if is_dje and not last:
+                    last = "응답이 없어 중단했습니다 (DJE Talk 창이 멈췄는지 확인하세요)"
                 self.root.after(0, self.say, "❌ 열지 못했습니다: " + (last or "원인 출력 없음"), "#c82014")
         except Exception as e:
             self.root.after(0, self.say, "❌ 실행하지 못했습니다: " + type(e).__name__, "#c82014")
         finally:
-            self.busy = None
+            if timer:
+                timer.cancel()
+            if is_dje:
+                self.dje_busy = False
+            else:
+                self.busy = None
             K.log_line("업무위젯 %s %.1fs %s" % (script, time.time() - t0, "ok" if ok else "FAIL " + last))
             if ok and script == "open_sanctn.py":       # 결재대기함을 연 김에 숫자도 새로 읽는다 (조용히)
                 self.root.after(4000, self.refresh_sanctn)
@@ -760,7 +785,7 @@ class Widget:
         v = self.size_var.get()
         if v == UI_PCT:
             return
-        if self.busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy:
+        if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy:
             self.size_var.set(UI_PCT)
             self.say("하던 작업이 끝난 뒤 크기를 바꿔 주세요", "#c82014")
             return
@@ -827,7 +852,7 @@ class Widget:
         except Exception:
             return
         if seen:
-            if not self.busy and not (self.sanctn_busy or self.jeopsu_busy):
+            if not self.dje_busy:
                 self.click("dje")               # 켜져 있으면 바로 로그인 (이미 로그인돼 있으면 스크립트가 알아서 건너뜀)
                 return
         if time.time() < until:
@@ -913,7 +938,7 @@ class Widget:
         self.apply_update(m, manual)
 
     def apply_update(self, m, manual=False):
-        if self.busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 잠깐 뒤에 다시 (직접 눌렀으면 15초, 자동이면 1분)
+        if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy:     # 로그인·화면 열기·건수 읽기 중이면 잠깐 뒤에 다시 (직접 눌렀으면 15초, 자동이면 1분)
             if manual:
                 self.upd_popup("⏳ 업데이트 대기", "하던 작업이 끝나면 v%s 로 바로 업데이트할게요" % m["version"], "#5c5c5c")
             self.upd_busy = True                      # 기다리는 동안 다른 확인이 또 시작되지 않게
