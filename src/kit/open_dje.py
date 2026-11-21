@@ -195,11 +195,12 @@ WM_LBUTTONDOWN, WM_LBUTTONUP = 0x0201, 0x0202
 LOGIN_BTN_X, LOGIN_BTN_Y = 191 / 385, 332 / 550
 
 
-def find_main():
+def find_main(include_hidden=False):
+    """메인 창. include_hidden 이면 트레이로 숨겨진 창도 찾는다."""
     found = []
 
     def cb(hwnd, _):
-        if user32.IsWindowVisible(hwnd) and class_of(hwnd) == MAIN_CLASS and exe_of(hwnd) == EXE_NAME:
+        if (include_hidden or user32.IsWindowVisible(hwnd)) and class_of(hwnd) == MAIN_CLASS and exe_of(hwnd) == EXE_NAME:
             found.append(hwnd)
         return True
 
@@ -207,12 +208,39 @@ def find_main():
     return found[0] if found else None
 
 
+WS_VISIBLE = 0x10000000
+user32.GetWindowLongW.argtypes = [wintypes.HWND, ctypes.c_int]
+user32.GetParent.argtypes = [wintypes.HWND]
+user32.GetParent.restype = wintypes.HWND
+
+
+def shown_within(hwnd, top):
+    """hwnd 부터 top 바로 아래까지 모두 '보이기' 상태인가. (top 자체가 트레이로 숨겨져 있어도 판단할 수 있게
+    IsWindowVisible 대신 각 창의 WS_VISIBLE 만 본다)"""
+    for _ in range(50):
+        if not hwnd or hwnd == top:
+            return hwnd == top
+        if not (user32.GetWindowLongW(hwnd, -16) & WS_VISIBLE):
+            return False
+        hwnd = user32.GetParent(hwnd)
+    return False
+
+
 def on_login_screen(main_hwnd):
-    """로그인 화면이면 True: '자동으로 로그인하기' 체크박스가 보인다."""
+    """로그인 화면이면 True: '자동으로 로그인하기' 체크박스가 보인다. (메인 창이 트레이에 숨어 있어도 판단)"""
     for h, c, t in children(main_hwnd):
-        if c.startswith("TOnUniCheckBox") and "자동으로 로그인" in t and user32.IsWindowVisible(h):
+        if c.startswith("TOnUniCheckBox") and "자동으로 로그인" in t and shown_within(h, main_hwnd):
             return True
     return False
+
+
+def bring_up(main_hwnd):
+    """트레이에 숨은 로그인 창을 화면에 꺼낸다."""
+    user32.ShowWindow(main_hwnd, 5)      # SW_SHOW
+    if user32.IsIconic(main_hwnd):
+        user32.ShowWindow(main_hwnd, 9)  # SW_RESTORE
+    user32.SetForegroundWindow(main_hwnd)
+    time.sleep(1.0)
 
 
 LOGIN_ASPECT = 385 / 550   # 로그인 화면 창의 가로/세로 비율 (단추 위치를 잡은 기준)
@@ -284,14 +312,17 @@ def start_and_open_cert_dialog():
     main_hwnd = find_main()
     if main_hwnd or process_running():
         # 이미 켜져 있거나 윈도우 시작과 함께 막 켜지는 중이다 — 두 번째로 띄우지 않고 창을 기다린다.
-        # 로그인 화면이 보이면 진행, 창이 6초 넘게 떠 있는데 로그인 화면이 아니면 이미 로그인됨,
-        # 20초 동안 창이 안 보이면 트레이에 내려가 있는 것(이미 로그인됨)으로 본다.
+        # 로그인 화면이면(트레이에 숨어 있어도) 창을 꺼내 진행, 창이 6초 넘게 있는데 로그인 화면이 아니면 이미 로그인됨,
+        # 20초 동안 메인 창 자체가 없으면 이미 로그인된 것으로 본다.
         t_end, first_seen, seen = time.time() + 20, None, False
         while time.time() < t_end:
-            main_hwnd = find_main()
+            main_hwnd = find_main(include_hidden=True)
             if main_hwnd:
                 first_seen = first_seen or time.time()
                 if on_login_screen(main_hwnd):
+                    if not user32.IsWindowVisible(main_hwnd):
+                        print("트레이에 숨은 DJE Talk 로그인 창을 꺼냅니다.")
+                        bring_up(main_hwnd)
                     seen = True
                     break
                 if time.time() - first_seen > 6:
@@ -387,7 +418,7 @@ def main():
     deadline = time.time() + 30
     while time.time() < deadline:
         time.sleep(0.7)
-        m = find_main()
+        m = find_main(include_hidden=True)
         if find_dialog() is None and m and not on_login_screen(m):
             print("✅ DJE 메신저에 로그인했습니다")
             return 0
