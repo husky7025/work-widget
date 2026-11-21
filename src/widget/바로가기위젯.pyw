@@ -209,6 +209,27 @@ def open_target_ok(target):
     return bool(re.match(r"(?i)https?://[^\s/]+", target) or re.match(r"[A-Za-z]:\\", target) or re.match(r"\\\\[^\\]+\\", target))
 
 
+_APP_SKIP = re.compile(r"(?i)uninstall|제거|삭제|readme|manual|도움말|\bhelp\b|module docs|website|홈페이지|release notes|license|자동 업데이트")
+
+
+def installed_apps():
+    """이 PC 에 설치된 프로그램 — 시작 메뉴 바로가기(.lnk)를 읽는다 (모든 사용자 + 나). [(이름, 경로)] 가나다순.
+    제거·도움말·자동 시작 같은 것은 뺀다. 같은 이름은 한 번만."""
+    roots = [os.path.join(os.environ.get(v, ""), r"Microsoft\Windows\Start Menu\Programs") for v in ("APPDATA", "PROGRAMDATA")]
+    seen = {}
+    for root in roots:
+        if not os.path.isdir(root):
+            continue
+        for dirpath, dirnames, files in os.walk(root):
+            dirnames[:] = [d for d in dirnames if d.lower() not in ("startup", "시작프로그램")]
+            for f in files:
+                stem, ext = os.path.splitext(f)
+                if ext.lower() != ".lnk" or _APP_SKIP.search(stem):
+                    continue
+                seen.setdefault(stem.strip().lower(), (stem.strip(), os.path.normpath(os.path.join(dirpath, f))))
+    return sorted(seen.values(), key=lambda x: x[0].lower())
+
+
 def sub_load(st):
     """저장된 펼침 메뉴 — 이상한 값은 버리고, 없으면 기본값."""
     out = sub_defaults()
@@ -991,12 +1012,36 @@ class Widget:
             d.transient(top)
             d.resizable(False, False)
             name_v, path_v = tk.StringVar(), tk.StringVar()
-            msg = tk.Label(d, text="열 것: 프로그램·파일·폴더를 고르거나, 웹 주소(https://…)를 붙여 넣으세요",
+            msg = tk.Label(d, text="설치된 프로그램을 고르거나, 웹 주소(https://…)를 붙여 넣거나, 파일·폴더를 고르세요",
                            bg=PANEL, fg="#5c5c5c", font=F(9), anchor="w", justify="left")
             msg.grid(row=0, column=0, columnspan=4, sticky="we", padx=px(12), pady=(px(10), px(6)))
-            tk.Label(d, text="열 것", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=1, column=0, sticky="w", padx=(px(12), px(6)))
+            apps = installed_apps()
+            app_path = dict(apps)
+            tk.Label(d, text="프로그램", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=1, column=0, sticky="w", padx=(px(12), px(6)), pady=(0, px(6)))
+            app_v = tk.StringVar()
+            cb = ttk.Combobox(d, textvariable=app_v, values=[a for a, _ in apps], font=F(9), width=42, height=18)
+            cb.grid(row=1, column=1, sticky="we", pady=(0, px(6)))
+            tk.Label(d, text="(%d개 · 글자를 치면 좁혀져요)" % len(apps), bg=PANEL, fg="#8a8a8a", font=F(8)
+                     ).grid(row=1, column=2, columnspan=2, sticky="w", padx=(px(4), px(12)), pady=(0, px(6)))
+
+            def app_chosen(e=None):
+                a = app_v.get()
+                if a in app_path:
+                    path_v.set(app_path[a])
+                    name_v.set(a[:20])
+
+            def app_filter(e=None):
+                if e is not None and e.keysym in ("Up", "Down", "Return", "Escape", "Tab"):
+                    return
+                t = app_v.get().strip().lower()
+                cb.configure(values=[a for a, _ in apps if t in a.lower()] if t else [a for a, _ in apps])
+                app_chosen()
+
+            cb.bind("<<ComboboxSelected>>", app_chosen)
+            cb.bind("<KeyRelease>", app_filter)
+            tk.Label(d, text="열 것", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=2, column=0, sticky="w", padx=(px(12), px(6)))
             pe = tk.Entry(d, textvariable=path_v, font=F(9), width=44)
-            pe.grid(row=1, column=1, sticky="we")
+            pe.grid(row=2, column=1, sticky="we")
 
             def picked(p):
                 if not p:
@@ -1009,23 +1054,23 @@ class Widget:
 
             tk.Button(d, text="파일…", font=F(9), relief="groove", bg=TILE_BG,
                       command=lambda: picked(filedialog.askopenfilename(parent=d, title="열 프로그램이나 파일 고르기"))
-                      ).grid(row=1, column=2, padx=(px(4), 0))
+                      ).grid(row=2, column=2, padx=(px(4), 0))
             tk.Button(d, text="폴더…", font=F(9), relief="groove", bg=TILE_BG,
                       command=lambda: picked(filedialog.askdirectory(parent=d, title="열 폴더 고르기"))
-                      ).grid(row=1, column=3, padx=(px(4), px(12)))
-            tk.Label(d, text="칸 이름", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=2, column=0, sticky="w", padx=(px(12), px(6)), pady=px(6))
+                      ).grid(row=2, column=3, padx=(px(4), px(12)))
+            tk.Label(d, text="칸 이름", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=3, column=0, sticky="w", padx=(px(12), px(6)), pady=px(6))
             ne = tk.Entry(d, textvariable=name_v, font=F(9), width=20)
-            ne.grid(row=2, column=1, sticky="w", pady=px(6))
+            ne.grid(row=3, column=1, sticky="w", pady=px(6))
 
             def ok():
                 p, n = path_v.get().strip().strip('"'), name_v.get().strip()[:20]
                 if p and not re.match(r"(?i)https?://", p):
                     p = os.path.normpath(p)               # C:/a/b 처럼 적어도 C:\a\b 로
                 if not open_target_ok(p):
-                    msg.configure(text="열 것이 이상해요 — C:\\… 같은 경로나 https:// 로 시작하는 주소만 돼요", fg="#c82014")
+                    msg.configure(text="열 것이 비었거나 이상해요 — 프로그램을 고르거나, C:\\… 경로나 https:// 주소를 적어 주세요", fg="#c82014")
                     return
                 if not re.match(r"(?i)https?://", p) and not os.path.exists(p):
-                    msg.configure(text="그 경로에 파일·폴더가 없어요 — [파일…]·[폴더…]로 골라 주세요", fg="#c82014")
+                    msg.configure(text="그 경로에 파일·폴더가 없어요 — 프로그램 목록이나 [파일…]·[폴더…]로 골라 주세요", fg="#c82014")
                     return
                 if not n:
                     msg.configure(text="칸 이름을 적어 주세요 (위젯 칸에 보일 글자)", fg="#c82014")
@@ -1039,14 +1084,14 @@ class Widget:
                 d.destroy()
 
             bb = tk.Frame(d, bg=PANEL)
-            bb.grid(row=3, column=0, columnspan=4, sticky="e", padx=px(12), pady=(px(4), px(10)))
+            bb.grid(row=4, column=0, columnspan=4, sticky="e", padx=px(12), pady=(px(4), px(10)))
             tk.Button(bb, text="넣기", font=F(9, True), relief="groove", bg=GREEN, fg="#ffffff", padx=px(10), command=ok).pack(side="right", padx=px(3))
             tk.Button(bb, text="취소", font=F(9), relief="groove", bg=TILE_BG, padx=px(10), command=d.destroy).pack(side="right", padx=px(3))
             d.bind("<Return>", lambda e: ok())
             d.bind("<Escape>", lambda e: d.destroy())
             d.update_idletasks()
             d.geometry("+%d+%d" % (top.winfo_rootx() + px(40), top.winfo_rooty() + px(60)))
-            pe.focus_set()
+            cb.focus_set()
 
         def show_head():
             cat = state["cat"]
