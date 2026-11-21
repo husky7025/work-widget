@@ -17,6 +17,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
@@ -24,7 +25,7 @@ import threading
 import time
 import tkinter as tk
 import tkinter.font as tkfont
-from tkinter import ttk
+from tkinter import filedialog, ttk
 from datetime import datetime
 from pathlib import Path
 
@@ -191,12 +192,21 @@ def sub_job_ok(job):
     if not (isinstance(job, (list, tuple)) and len(job) == 2):
         return False
     site, target = job
+    if site == "open":
+        return open_target_ok(target)
     if site == "edufine":
         return isinstance(target, str) and bool(re.fullmatch(r"[A-Z0-9]{4,20}", target))
     if site == "neis":
         return (isinstance(target, list) and 0 < len(target) <= 4
                 and all(isinstance(x, list) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], int) for x in target))
     return False
+
+
+def open_target_ok(target):
+    """«내 프로그램» 칸이 열 수 있는 것: 이 PC·공유 폴더의 파일·폴더 경로(C:\\…, \\\\서버\\…) 또는 http(s) 웹 주소만."""
+    if not isinstance(target, str) or not 0 < len(target) <= 1000 or any(ch in target for ch in "\r\n\t\"<>|"):
+        return False
+    return bool(re.match(r"(?i)https?://[^\s/]+", target) or re.match(r"[A-Za-z]:\\", target) or re.match(r"\\\\[^\\]+\\", target))
 
 
 def sub_load(st):
@@ -774,9 +784,29 @@ class Widget:
             self.click(job)
             return
         site, target = job[0], job[1]
+        if site == "open":
+            self.open_mine(target, name)
+            return
         arg = json.dumps(target, ensure_ascii=False) if site == "neis" else target
         self.click(("work_widget_menu.py", ("open-" + site, arg, name),
                     "✅  열었습니다", "✅ %s 화면을 열었습니다 (신청·저장·결재는 안 함)" % name))
+
+    def open_mine(self, target, name):
+        """«내 프로그램» 칸 — 탐색기에서 두 번 누른 것처럼 윈도우에게 열어 달라고 한다 (웹 주소는 기본 브라우저)."""
+        if not open_target_ok(target):
+            self.say("⚠️ «%s» 칸에 저장된 경로가 이상해요 — ⚙ → 펼침 메뉴 고르기에서 다시 넣어 주세요" % name, "#c82014")
+            return
+        is_url = bool(re.match(r"(?i)https?://", target))
+        if not is_url and not os.path.exists(target):
+            self.say("⚠️ «%s» 파일이 없어요 — 옮겼거나 지웠다면 다시 넣어 주세요" % name, "#c82014")
+            return
+        try:
+            os.startfile(target)
+        except OSError as e:
+            K.log_line("업무위젯 내 프로그램 열기 실패: %s (%s)" % (name, type(e).__name__))
+            self.say("⚠️ «%s» 를 열지 못했어요" % name, "#c82014")
+            return
+        self.say("✅ «%s» 열었어요" % name, "#00754A")
 
     def show_tip(self):
         self.hide_tip()
@@ -850,7 +880,8 @@ class Widget:
                 out += [{"name": m["name"], "job": ["edufine", m["id"]], "group": m["group"], "crumb": m.get("crumb", "")}
                         for m in cat.get("edufine", []) if isinstance(m, dict) and "id" in m]
             have = {key(o["job"]) for o in out}
-            out += [{"name": x["name"], "job": x["job"], "group": "지금 펼침 칸에 있는 메뉴", "crumb": ""}
+            out += [{"name": x["name"], "job": x["job"], "crumb": "",
+                     "group": "내 프로그램" if x["job"][0] == "open" else "지금 펼침 칸에 있는 메뉴"}
                     for x in chosen[kind] if key(x["job"]) not in have]
             return out
 
@@ -882,6 +913,8 @@ class Widget:
             views[kind] = {"tv": tv, "lb": lb, "map": {}}
             for t, cmd in (("▲ 위로", lambda k=kind: move(k, -1)), ("▼ 아래로", lambda k=kind: move(k, 1)), ("빼기", lambda k=kind: remove(k))):
                 tk.Button(bf, text=t, font=F(9), command=cmd, relief="groove", bg=TILE_BG).pack(side="left", expand=True, fill="x", padx=1)
+            tk.Button(rf, text="＋ 내 프로그램 넣기", font=F(9, True), command=lambda k=kind: add_mine(k), relief="groove",
+                      bg=TILE_BG, fg=GREEN).pack(fill="x", pady=(px(4), 0))
             tv.bind("<<TreeviewSelect>>", lambda e, k=kind: toggle(k))
 
         def mark(kind):
@@ -902,7 +935,7 @@ class Widget:
             for o in options(kind):
                 g = o["group"]
                 if g not in nodes:
-                    nodes[g] = tv.insert("", "end", text=g, open=g in ("기본", "지금 펼침 칸에 있는 메뉴", "나의메뉴"))
+                    nodes[g] = tv.insert("", "end", text=g, open=g in ("기본", "지금 펼침 칸에 있는 메뉴", "나의메뉴", "내 프로그램"))
                 parent = nodes[g]
                 if o["crumb"]:
                     ck = (g, o["crumb"])
@@ -945,6 +978,75 @@ class Widget:
             if sel:
                 del chosen[kind][sel[0]]
                 mark(kind)
+
+        def add_mine(kind):
+            """«내 프로그램» 칸 넣기 — 프로그램·파일·폴더를 고르거나 웹 주소를 적고, 칸 이름을 정한다."""
+            if len(chosen[kind]) >= SUB_MAX:
+                head.configure(text="펼침 칸은 %d개까지예요 — 오른쪽에서 하나를 뺀 뒤 넣어 주세요" % SUB_MAX, fg="#c82014")
+                return
+            d = tk.Toplevel(top)
+            d.title("내 프로그램 넣기")
+            d.configure(bg=PANEL)
+            d.attributes("-topmost", True)
+            d.transient(top)
+            d.resizable(False, False)
+            name_v, path_v = tk.StringVar(), tk.StringVar()
+            msg = tk.Label(d, text="열 것: 프로그램·파일·폴더를 고르거나, 웹 주소(https://…)를 붙여 넣으세요",
+                           bg=PANEL, fg="#5c5c5c", font=F(9), anchor="w", justify="left")
+            msg.grid(row=0, column=0, columnspan=4, sticky="we", padx=px(12), pady=(px(10), px(6)))
+            tk.Label(d, text="열 것", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=1, column=0, sticky="w", padx=(px(12), px(6)))
+            pe = tk.Entry(d, textvariable=path_v, font=F(9), width=44)
+            pe.grid(row=1, column=1, sticky="we")
+
+            def picked(p):
+                if not p:
+                    return
+                p = os.path.normpath(p)
+                path_v.set(p)
+                if not name_v.get().strip():
+                    base = os.path.basename(p.rstrip("\\")) or p
+                    name_v.set(os.path.splitext(base)[0] if os.path.isfile(p) else base)
+
+            tk.Button(d, text="파일…", font=F(9), relief="groove", bg=TILE_BG,
+                      command=lambda: picked(filedialog.askopenfilename(parent=d, title="열 프로그램이나 파일 고르기"))
+                      ).grid(row=1, column=2, padx=(px(4), 0))
+            tk.Button(d, text="폴더…", font=F(9), relief="groove", bg=TILE_BG,
+                      command=lambda: picked(filedialog.askdirectory(parent=d, title="열 폴더 고르기"))
+                      ).grid(row=1, column=3, padx=(px(4), px(12)))
+            tk.Label(d, text="칸 이름", bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=2, column=0, sticky="w", padx=(px(12), px(6)), pady=px(6))
+            ne = tk.Entry(d, textvariable=name_v, font=F(9), width=20)
+            ne.grid(row=2, column=1, sticky="w", pady=px(6))
+
+            def ok():
+                p, n = path_v.get().strip().strip('"'), name_v.get().strip()[:20]
+                if p and not re.match(r"(?i)https?://", p):
+                    p = os.path.normpath(p)               # C:/a/b 처럼 적어도 C:\a\b 로
+                if not open_target_ok(p):
+                    msg.configure(text="열 것이 이상해요 — C:\\… 같은 경로나 https:// 로 시작하는 주소만 돼요", fg="#c82014")
+                    return
+                if not re.match(r"(?i)https?://", p) and not os.path.exists(p):
+                    msg.configure(text="그 경로에 파일·폴더가 없어요 — [파일…]·[폴더…]로 골라 주세요", fg="#c82014")
+                    return
+                if not n:
+                    msg.configure(text="칸 이름을 적어 주세요 (위젯 칸에 보일 글자)", fg="#c82014")
+                    return
+                job = ["open", p]
+                if any(key(x["job"]) == key(job) for x in chosen[kind]):
+                    msg.configure(text="이미 펼침 칸에 있어요", fg="#c82014")
+                    return
+                chosen[kind].append({"name": n, "job": job})
+                fill(kind)
+                d.destroy()
+
+            bb = tk.Frame(d, bg=PANEL)
+            bb.grid(row=3, column=0, columnspan=4, sticky="e", padx=px(12), pady=(px(4), px(10)))
+            tk.Button(bb, text="넣기", font=F(9, True), relief="groove", bg=GREEN, fg="#ffffff", padx=px(10), command=ok).pack(side="right", padx=px(3))
+            tk.Button(bb, text="취소", font=F(9), relief="groove", bg=TILE_BG, padx=px(10), command=d.destroy).pack(side="right", padx=px(3))
+            d.bind("<Return>", lambda e: ok())
+            d.bind("<Escape>", lambda e: d.destroy())
+            d.update_idletasks()
+            d.geometry("+%d+%d" % (top.winfo_rootx() + px(40), top.winfo_rooty() + px(60)))
+            pe.focus_set()
 
         def show_head():
             cat = state["cat"]
