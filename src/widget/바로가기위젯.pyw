@@ -561,7 +561,7 @@ class Widget:
         buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
         lab_font = min((fit_font(b[2], TILE - px(8)) for b in buttons), key=lambda f: f[1])   # 네 칸 모두 같은 크기로
         for i, (kind, icon, label) in enumerate(buttons):
-            c = self.make_tile(grid, 1, i, hand=True)
+            c = self.make_tile(grid, 2, i, hand=True)
             acc, badge, tint = ACCENT[kind]
             c.create_oval(TILE // 2 - px(14), px(7), TILE // 2 + px(14), px(35), fill=badge, outline="")
             c.create_text(TILE // 2, px(21), text=icon, fill=acc, font=("Segoe UI Emoji", FS(14)))
@@ -574,7 +574,7 @@ class Widget:
                 c.bind("<Button-1>", lambda e, k=kind: self.click(k))
             c.bind("<Enter>", lambda e, w=c, a=acc, tt=tint: w.itemconfigure("edge", outline=a, fill=tt))
             c.bind("<Leave>", lambda e, w=c, k=kind: self.sub_open != k and w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
-        sc = self.make_tile(grid, 1, 4, hand=True)
+        sc = self.make_tile(grid, 2, 4, hand=True)
         self.sanctn_cv = sc
         self.sanctn_num = sc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         self.sanctn_lab = sc.create_text(TILE // 2, px(44), text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
@@ -585,7 +585,7 @@ class Widget:
         sc.bind("<Leave>", lambda e: self.paint_sanctn())
         self.sanctn_busy = False
         # 기관접수대기 칸 — 숫자는 30분마다 읽고(check_jeopsu.py), 누르면 그 화면을 연다(open_jeopsu.py)
-        jc = self.make_tile(grid, 1, 5, hand=True)
+        jc = self.make_tile(grid, 2, 5, hand=True)
         self.jeopsu_cv = jc
         self.jeopsu_num = jc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         jc.create_text(TILE // 2, px(44), text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
@@ -707,11 +707,11 @@ class Widget:
         y = self.root.winfo_y()
         bottom = self.root.winfo_screenheight() - px(48)          # 작업표시줄 몫을 남긴다
         self.sub_up = y + self.base_h + self.sub_extra > bottom and y - self.sub_extra >= 0
-        f = tk.Frame(self.root, bg=PANEL)
-        if self.sub_up:                                            # 위로: 맨 윗줄(📍⚙✕) 위에 칸을 넣고 위젯을 그만큼 올린다
-            f.pack(before=self.bar, padx=PAD, pady=(px(8), 0))
-            self.bar.pack_configure(pady=(px(2), 0))
+        if self.sub_up:                                            # 위로: 시계 카드와 단추 줄 사이(1번 줄)에 넣고 위젯을 그만큼 올린다
+            f = tk.Frame(self.grid, bg=PANEL)
+            f.grid(row=1, column=0, columnspan=6, pady=(px(4), px(4)))
         else:
+            f = tk.Frame(self.root, bg=PANEL)
             f.pack(after=self.grid, padx=PAD, pady=(px(4), 0))
         self.bind_drag(f)
         for i, it in enumerate(items):
@@ -758,8 +758,6 @@ class Widget:
         if self.sub_frame is not None:
             self.sub_frame.destroy()
             self.sub_frame = None
-        if self.sub_up:
-            self.bar.pack_configure(pady=(px(8), 0))
         self.root.update_idletasks()
         y = self.root.winfo_y() + (self.sub_extra if self.sub_up else 0)
         self.sub_up = False
