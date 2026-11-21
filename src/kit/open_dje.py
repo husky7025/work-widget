@@ -160,15 +160,16 @@ def find_exe():
                 key = winreg.OpenKey(root, sub)
             except OSError:
                 continue
-            for i in range(winreg.QueryInfoKey(key)[0]):
-                try:
-                    k = winreg.OpenKey(key, winreg.EnumKey(key, i))
-                    if "dje talk" in winreg.QueryValueEx(k, "DisplayName")[0].lower():
-                        exe = os.path.join(winreg.QueryValueEx(k, "InstallLocation")[0], "ucware_m.exe")
-                        if os.path.isfile(exe):
-                            return exe
-                except OSError:
-                    continue
+            with key:
+                for i in range(winreg.QueryInfoKey(key)[0]):
+                    try:
+                        with winreg.OpenKey(key, winreg.EnumKey(key, i)) as k:
+                            if "dje talk" in winreg.QueryValueEx(k, "DisplayName")[0].lower():
+                                exe = os.path.join(winreg.QueryValueEx(k, "InstallLocation")[0], "ucware_m.exe")
+                                if os.path.isfile(exe):
+                                    return exe
+                    except OSError:
+                        continue
     except ImportError:
         pass
     for b in (r"C:\UCWARE", r"D:\UCWARE", r"C:\Program Files\UCWARE", r"C:\Program Files (x86)\UCWARE"):
@@ -367,6 +368,10 @@ def start_and_open_cert_dialog():
 
 
 def main():
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)     # 위젯이 진행 문구를 바로바로 받게
+    except Exception:
+        pass
     dry = "--dry-run" in sys.argv
     print(f"DJE Talk 로그인을 시작합니다. (최대 {WAIT_SECONDS}초)")
     if not is_daejeon():

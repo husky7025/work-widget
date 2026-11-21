@@ -171,7 +171,7 @@ def sub_text(name):
                 cur = (cur + " " + wd).strip()
         lines.append(cur)
     elif name.endswith(")") and "(" in name[1:]:
-        i = name.index("(")
+        i = name.index("(", 1)
         lines, paren = chunks(name[:i]), name[i:]
         if len(lines[-1]) + len(paren) <= 6:
             lines[-1] += paren
@@ -732,7 +732,7 @@ class Widget:
         self.sub_tiles[kind].coords("chev", *self.chev_pts(True))
         self.set_height(self.base_h + self.sub_extra, y - self.sub_extra if self.sub_up else None)
         self.sub_idle = 0
-        self.root.after(1000, self.sub_watch)
+        self.sub_watch_id = self.root.after(1000, self.sub_watch)
 
     def sub_watch(self):
         """펼친 채 마우스가 위젯 밖에 SUB_IDLE_S 초 있으면 접는다 (위젯 위에 있으면 계속 펼쳐 둔다)."""
@@ -748,12 +748,15 @@ class Widget:
         if self.sub_idle >= SUB_IDLE_S:
             self.close_sub()
             return
-        self.root.after(1000, self.sub_watch)
+        self.sub_watch_id = self.root.after(1000, self.sub_watch)
 
     def close_sub(self):
         if self.sub_open is None:
             return
         kind, self.sub_open = self.sub_open, None
+        if getattr(self, "sub_watch_id", None):            # 펼칠 때마다 감시가 하나씩 쌓이지 않게 앞의 것을 끈다
+            self.root.after_cancel(self.sub_watch_id)
+            self.sub_watch_id = None
         self.sub_tiles[kind].itemconfigure("edge", outline=EDGE, fill=TILE_BG)
         self.sub_tiles[kind].coords("chev", *self.chev_pts(False))
         if self.sub_frame is not None:
@@ -1134,7 +1137,7 @@ class Widget:
 
     # ── 에듀파인 결재대기 건수 (check_sanctn.py 가 업무포털 메인 숫자만 읽는다 · 30분마다 + 칸을 누르면 바로) ──
     def refresh_sanctn(self, manual=False):
-        if self.sanctn_busy or self.busy:              # 로그인·화면 열기 작업 중에는 포털 탭을 새로고침하지 않는다
+        if self.sanctn_busy or self.jeopsu_busy or self.busy:     # 로그인·화면 열기·접수 건수 읽기 중에는 포털 탭을 건드리지 않는다
             if manual:
                 self.say("다른 작업이 끝난 뒤 다시 눌러 주세요", "#c82014")
             return
@@ -1398,11 +1401,12 @@ class Widget:
         state = {"done": False}
 
         def watchdog():
-            """3분이 지나도 끝나지 않으면 «업데이트 중» 에서 빠져나온다 (창이 영원히 떠 있지 않게)."""
+            """3분이 지나도 끝나지 않으면 «업데이트 중» 표시만 푼다 (위젯은 다시 쓸 수 있게).
+            뒤에서 도는 업데이트가 끝날 때까지 upd_busy 는 그대로 둬서 업데이트가 겹쳐 시작되지 않게 한다."""
             if state["done"]:
                 return
-            self.busy = None
-            self.upd_busy = False
+            if self.busy == "업데이트 중":
+                self.busy = None
             K.log_line("업무위젯 업데이트가 3분 안에 끝나지 않아 멈춤 표시를 풀었습니다")
             self.upd_popup("⚠ 업데이트가 오래 걸려요", "지금 버전 그대로 써요 · 잠시 뒤 다시 확인해 보세요", "#c82014", 8000)
         self.root.after(180_000, watchdog)
@@ -1411,16 +1415,24 @@ class Widget:
             try:
                 UPD.apply(KIT, m, lambda s: self.root.after(0, self.say, "⏳ " + s + "…", "#5c5c5c"))
                 state["done"] = True
-                self.root.after(0, self.relaunch)
+                self.root.after(0, self.relaunch_when_idle)
             except Exception as e:
                 msg = (str(e).splitlines() or [type(e).__name__])[0][:80]
                 K.log_line("업무위젯 업데이트 실패: " + msg)
                 self.root.after(0, self.upd_popup, "⚠ 업데이트 실패", "지금 버전 그대로 써요 · 다음에 다시 해 볼게요", "#c82014", 6000)
             finally:
                 state["done"] = True
-                self.busy = None
+                if self.busy == "업데이트 중":            # 워치독 뒤 선생님이 시작한 작업 표시는 지우지 않는다
+                    self.busy = None
                 self.upd_busy = False
         threading.Thread(target=work, daemon=True).start()
+
+    def relaunch_when_idle(self):
+        """워치독이 풀린 뒤 선생님이 다른 작업을 시작했으면 끝날 때까지 기다렸다가 다시 켠다."""
+        if (self.busy and self.busy != "업데이트 중") or self.dje_busy or self.sanctn_busy or self.jeopsu_busy:
+            self.root.after(5000, self.relaunch_when_idle)
+            return
+        self.relaunch()
 
     def relaunch(self):
         """새 파일로 위젯을 다시 켠다 — 이 위젯이 끝난 뒤(한 개만 뜨기 표시가 풀린 뒤) 3초쯤 있다가 뜬다.
