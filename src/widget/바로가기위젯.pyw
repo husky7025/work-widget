@@ -24,6 +24,7 @@ import threading
 import time
 import tkinter as tk
 import tkinter.font as tkfont
+from tkinter import ttk
 from datetime import datetime
 from pathlib import Path
 
@@ -140,6 +141,75 @@ SUBMENUS = {
             ("사업관리\n카드(담당)", "사업관리카드(담당)", ("edufine", "A00FAA0101001"))],
 }
 SUB_COLS = 6
+CREDIT = "만든 사람 · 유재서"           # 제목에 마우스를 올렸을 때만 보인다
+SUB_MAX = 12                     # 펼침 칸은 두 줄(12칸)까지
+SUB_IDLE_S = 10                  # 펼친 채 마우스가 위젯 밖에 이만큼 있으면 저절로 접는다
+SUB_BUILTIN = {"neis": [("나이스 첫 화면", "neis")], "edu": [("내부기안", "gian"), ("품의등록", "pumui")]}   # 메뉴를 안 읽어도 고를 수 있는 것
+MENUS_FILE_NAME = "work_widget_menus.json"   # work_widget_menu.py read 가 적는 «내 메뉴» 목록 (키트 폴더)
+
+
+def sub_defaults():
+    return {k: [{"name": n, "text": t, "job": j} for t, n, j in v] for k, v in SUBMENUS.items()}
+
+
+def sub_text(name):
+    """칸에 쓸 글자 (세 줄까지). 띄어쓰기가 있으면 낱말을 5글자 안쪽으로 묶고, 없으면 4글자씩 끊는다.
+    끝에 붙은 (괄호)는 끝줄에 붙이거나 한 줄로 둔다. 세 줄이 넘으면 «…» 로 줄인다."""
+    name = str(name).strip()
+
+    def chunks(t):
+        n = len(t)
+        return [t] if n <= 4 else [t[:3], t[3:]] if n == 5 else [t[i:i + 4] for i in range(0, n, 4)]
+
+    if " " in name:
+        lines, cur = [], ""
+        for wd in name.split():
+            if cur and len(cur) + 1 + len(wd) > 5:
+                lines.append(cur)
+                cur = wd
+            else:
+                cur = (cur + " " + wd).strip()
+        lines.append(cur)
+    elif name.endswith(")") and "(" in name[1:]:
+        i = name.index("(")
+        lines, paren = chunks(name[:i]), name[i:]
+        if len(lines[-1]) + len(paren) <= 6:
+            lines[-1] += paren
+        else:
+            lines.append(paren)
+    else:
+        lines = chunks(name)
+    if len(lines) > 3:
+        lines = lines[:3]
+        lines[2] = lines[2][:3] + "…"
+    return "\n".join(lines)
+
+
+def sub_job_ok(job):
+    if isinstance(job, str):
+        return job in ("neis", "gian", "pumui")
+    if not (isinstance(job, (list, tuple)) and len(job) == 2):
+        return False
+    site, target = job
+    if site == "edufine":
+        return isinstance(target, str) and bool(re.fullmatch(r"[A-Z0-9]{4,20}", target))
+    if site == "neis":
+        return (isinstance(target, list) and 0 < len(target) <= 4
+                and all(isinstance(x, list) and len(x) == 2 and isinstance(x[0], str) and isinstance(x[1], int) for x in target))
+    return False
+
+
+def sub_load(st):
+    """저장된 펼침 메뉴 — 이상한 값은 버리고, 없으면 기본값."""
+    out = sub_defaults()
+    saved = st.get("submenus")
+    if isinstance(saved, dict):
+        for k in ("neis", "edu"):
+            v = saved.get(k)
+            if isinstance(v, list):
+                items = [x for x in v if isinstance(x, dict) and isinstance(x.get("name"), str) and sub_job_ok(x.get("job"))]
+                out[k] = items[:SUB_MAX]
+    return out
 CLOCK_KEYS = ("mo", "dd", "wk", "hh", "mi", "ss")
 CLOCK_LABEL = {"mo": "월", "dd": "일", "wk": "요일", "hh": "시", "mi": "분", "ss": "초"}
 SANCTN_EVERY_MS =30 * 60 * 1000        # 에듀파인 결재대기 건수를 30분마다 읽는다 (읽기만 함)
@@ -433,6 +503,9 @@ class Widget:
         bar.pack(fill="x", padx=PAD - px(4), pady=(px(8), 0))
         self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=F(9, True))
         self.title_lb.pack(side="left", padx=(px(10), 0))
+        self.tip = None                       # 제목에 마우스를 올리면 만든 사람이 작게 뜬다
+        self.title_lb.bind("<Enter>", lambda e: self.show_tip(), add="+")
+        self.title_lb.bind("<Leave>", lambda e: self.hide_tip(), add="+")
         for text, cmd, tip in (("✕", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
                                ("⚙", self.show_options, "환경설정"),
                                ("📍", self.toggle_pin, "항상 위 켜기/끄기")):
@@ -482,6 +555,9 @@ class Widget:
         self.sub_extra = 0           # 펼쳐서 늘어난 높이
         self.sub_up = False          # 위로 펼쳤나 (그만큼 위젯을 위로 올렸다)
         self.base_h = SIZE_H
+        self.submenus = sub_load(st)
+        self.sub_idle = 0
+        self.picker = None
         buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
         lab_font = min((fit_font(b[2], TILE - px(8)) for b in buttons), key=lambda f: f[1])   # 네 칸 모두 같은 크기로
         for i, (kind, icon, label) in enumerate(buttons):
@@ -550,6 +626,7 @@ class Widget:
             sm.add_radiobutton(label=name, value=pct, variable=self.size_var, command=self.on_size)
         vm.add_cascade(label="위젯 크기", menu=sm)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
+        self.m.add_command(label="펼침 메뉴 고르기 (나이스·에듀파인)", command=self.open_picker)
         am = tk.Menu(self.m, tearoff=0, font=F(10))       # 자동 실행·알림 ▸ 켜고 끄는 항목들
         am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
@@ -619,7 +696,10 @@ class Widget:
             self.open_sub(kind)
 
     def open_sub(self, kind):
-        items = SUBMENUS[kind]
+        items = self.submenus.get(kind) or []
+        if not items:
+            self.say("펼칠 메뉴가 없어요 — ⚙ → 펼침 메뉴 고르기에서 넣어 주세요", "#c82014")
+            return
         acc, badge, tint = ACCENT[kind]
         rows = (len(items) + SUB_COLS - 1) // SUB_COLS
         self.sub_extra = rows * (TILE + GAP) + px(8)
@@ -634,7 +714,9 @@ class Widget:
         else:
             f.pack(after=self.grid, padx=PAD, pady=(px(4), 0))
         self.bind_drag(f)
-        for i, (text, name, job) in enumerate(items):
+        for i, it in enumerate(items):
+            name, job = it["name"], it["job"]
+            text = it.get("text") or sub_text(name)
             c = tk.Canvas(f, width=TILE, height=TILE, bg=PANEL, highlightthickness=0, cursor="hand2")
             c.grid(row=i // SUB_COLS, column=i % SUB_COLS, padx=GAP // 2, pady=GAP // 2)
             round_rect(c, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=tint, outline=badge, width=1, tags="edge")
@@ -648,6 +730,24 @@ class Widget:
         self.sub_tiles[kind].itemconfigure("edge", outline=acc, fill=tint)
         self.sub_tiles[kind].coords("chev", *self.chev_pts(True))
         self.set_height(self.base_h + self.sub_extra, y - self.sub_extra if self.sub_up else None)
+        self.sub_idle = 0
+        self.root.after(1000, self.sub_watch)
+
+    def sub_watch(self):
+        """펼친 채 마우스가 위젯 밖에 SUB_IDLE_S 초 있으면 접는다 (위젯 위에 있으면 계속 펼쳐 둔다)."""
+        if self.sub_open is None:
+            return
+        try:
+            mx, my = self.root.winfo_pointerxy()
+            x, y = self.root.winfo_rootx(), self.root.winfo_rooty()
+            inside = x <= mx < x + self.root.winfo_width() and y <= my < y + self.root.winfo_height()
+        except Exception:
+            inside = False
+        self.sub_idle = 0 if inside else self.sub_idle + 1
+        if self.sub_idle >= SUB_IDLE_S:
+            self.close_sub()
+            return
+        self.root.after(1000, self.sub_watch)
 
     def close_sub(self):
         if self.sub_open is None:
@@ -671,10 +771,234 @@ class Widget:
         if isinstance(job, str):                  # 원래 단추 하나와 같은 일 (나이스 첫 화면 · 내부기안 · 품의등록)
             self.click(job)
             return
-        site, target = job
+        site, target = job[0], job[1]
         arg = json.dumps(target, ensure_ascii=False) if site == "neis" else target
         self.click(("work_widget_menu.py", ("open-" + site, arg, name),
                     "✅  열었습니다", "✅ %s 화면을 열었습니다 (신청·저장·결재는 안 함)" % name))
+
+    def show_tip(self):
+        self.hide_tip()
+        t = tk.Toplevel(self.root)
+        t.overrideredirect(True)
+        t.attributes("-topmost", True)
+        tk.Label(t, text=CREDIT, bg="#fffdf7", fg="#6b6b6b", font=F(8), padx=px(6), pady=px(2),
+                 highlightthickness=1, highlightbackground="#d6d1c6").pack()
+        t.update_idletasks()
+        x = self.title_lb.winfo_rootx()
+        y = self.title_lb.winfo_rooty() - t.winfo_reqheight() - px(4)
+        if y < 0:
+            y = self.title_lb.winfo_rooty() + self.title_lb.winfo_height() + px(4)
+        t.geometry("+%d+%d" % (x, y))
+        self.tip = t
+
+    def hide_tip(self):
+        if self.tip is not None:
+            try:
+                self.tip.destroy()
+            except Exception:
+                pass
+            self.tip = None
+
+    # ── 펼침 메뉴 고르기 창 (⚙ 메뉴) ──
+    @staticmethod
+    def menus_file():
+        return KIT / MENUS_FILE_NAME
+
+    def load_catalog(self):
+        try:
+            d = json.loads(self.menus_file().read_text(encoding="utf-8"))
+            return d if isinstance(d, dict) else None
+        except Exception:
+            return None
+
+    def read_menus(self):
+        self.click(("work_widget_menu.py", ("read",), "✅  메뉴를 읽었습니다", "✅ 내 메뉴를 읽었어요 — 고르는 창에 목록이 나와요"))
+
+    def open_picker(self):
+        if self.picker is not None and self.picker.winfo_exists():
+            self.picker.deiconify()
+            self.picker.lift()
+            return
+        self.close_sub()
+        top = tk.Toplevel(self.root)
+        self.picker = top
+        top.title("펼침 메뉴 고르기")
+        top.configure(bg=PANEL)
+        top.attributes("-topmost", True)
+        try:
+            top.iconbitmap(str(HERE0 / "업무위젯.ico"))
+        except Exception:
+            pass
+        sty = ttk.Style(top)
+        sty.configure("Treeview", font=F(9), rowheight=px(22))
+        sty.configure("TNotebook.Tab", font=F(9, True), padding=(px(12), px(4)))
+        chosen = {k: [dict(x) for x in self.submenus.get(k, [])] for k in ("neis", "edu")}
+        state = {"cat": self.load_catalog(), "mtime": self._menus_mtime()}
+
+        def key(job):
+            return json.dumps(job, ensure_ascii=False)
+
+        def options(kind):
+            out = [{"name": n, "job": j, "group": "기본", "crumb": ""} for n, j in SUB_BUILTIN[kind]]
+            cat = state["cat"] or {}
+            if kind == "neis":
+                out += [{"name": m["name"], "job": ["neis", m["path"]], "group": m["group"], "crumb": m.get("crumb", "")}
+                        for m in cat.get("neis", []) if isinstance(m, dict) and "path" in m]
+            else:
+                out += [{"name": m["name"], "job": ["edufine", m["id"]], "group": m["group"], "crumb": m.get("crumb", "")}
+                        for m in cat.get("edufine", []) if isinstance(m, dict) and "id" in m]
+            have = {key(o["job"]) for o in out}
+            out += [{"name": x["name"], "job": x["job"], "group": "지금 펼침 칸에 있는 메뉴", "crumb": ""}
+                    for x in chosen[kind] if key(x["job"]) not in have]
+            return out
+
+        head = tk.Label(top, bg=PANEL, fg="#5c5c5c", font=F(9), justify="left", anchor="w")
+        head.pack(fill="x", padx=px(12), pady=(px(10), px(4)))
+        nb = ttk.Notebook(top)
+        nb.pack(fill="both", expand=True, padx=px(10))
+        views = {}
+        for kind, title in (("neis", "  나이스 ▾  "), ("edu", "  에듀파인 ▾  ")):
+            f = tk.Frame(nb, bg=PANEL)
+            nb.add(f, text=title)
+            lf = tk.Frame(f, bg=PANEL)
+            lf.pack(side="left", fill="both", expand=True, padx=(px(6), px(4)), pady=px(6))
+            tk.Label(lf, text="전체 메뉴 — 눌러서 넣기 / 빼기", bg=PANEL, fg=WHITE, font=F(9, True), anchor="w").pack(fill="x")
+            tvf = tk.Frame(lf, bg=PANEL)
+            tvf.pack(fill="both", expand=True)
+            tv = ttk.Treeview(tvf, show="tree", height=16, selectmode="browse")
+            sb = ttk.Scrollbar(tvf, orient="vertical", command=tv.yview)
+            tv.configure(yscrollcommand=sb.set)
+            tv.pack(side="left", fill="both", expand=True)
+            sb.pack(side="right", fill="y")
+            rf = tk.Frame(f, bg=PANEL)
+            rf.pack(side="left", fill="y", padx=(px(4), px(6)), pady=px(6))
+            tk.Label(rf, text="펼침 칸 (이 순서, 최대 %d개)" % SUB_MAX, bg=PANEL, fg=WHITE, font=F(9, True), anchor="w").pack(fill="x")
+            lb = tk.Listbox(rf, height=14, width=22, font=F(9), activestyle="none", exportselection=False)
+            lb.pack(fill="y", expand=True)
+            bf = tk.Frame(rf, bg=PANEL)
+            bf.pack(fill="x", pady=(px(4), 0))
+            views[kind] = {"tv": tv, "lb": lb, "map": {}}
+            for t, cmd in (("▲ 위로", lambda k=kind: move(k, -1)), ("▼ 아래로", lambda k=kind: move(k, 1)), ("빼기", lambda k=kind: remove(k))):
+                tk.Button(bf, text=t, font=F(9), command=cmd, relief="groove", bg=TILE_BG).pack(side="left", expand=True, fill="x", padx=1)
+            tv.bind("<<TreeviewSelect>>", lambda e, k=kind: toggle(k))
+
+        def mark(kind):
+            v = views[kind]
+            keys = {key(x["job"]) for x in chosen[kind]}
+            for iid, o in v["map"].items():
+                v["tv"].item(iid, text=("☑  " if key(o["job"]) in keys else "☐  ") + o["name"])
+            v["lb"].delete(0, "end")
+            for x in chosen[kind]:
+                v["lb"].insert("end", x["name"])
+
+        def fill(kind):
+            v = views[kind]
+            tv = v["tv"]
+            tv.delete(*tv.get_children())
+            v["map"] = {}
+            nodes = {}
+            for o in options(kind):
+                g = o["group"]
+                if g not in nodes:
+                    nodes[g] = tv.insert("", "end", text=g, open=g in ("기본", "지금 펼침 칸에 있는 메뉴", "나의메뉴"))
+                parent = nodes[g]
+                if o["crumb"]:
+                    ck = (g, o["crumb"])
+                    if ck not in nodes:
+                        nodes[ck] = tv.insert(nodes[g], "end", text=o["crumb"])
+                    parent = nodes[ck]
+                v["map"][tv.insert(parent, "end", text=o["name"])] = o
+            mark(kind)
+
+        def toggle(kind):
+            v = views[kind]
+            sel = v["tv"].selection()
+            if not sel or sel[0] not in v["map"]:
+                return
+            o = v["map"][sel[0]]
+            v["tv"].selection_remove(sel[0])
+            k = key(o["job"])
+            if any(key(x["job"]) == k for x in chosen[kind]):
+                chosen[kind] = [x for x in chosen[kind] if key(x["job"]) != k]
+            elif len(chosen[kind]) >= SUB_MAX:
+                head.configure(text="펼침 칸은 %d개까지예요 — 오른쪽에서 하나를 뺀 뒤 넣어 주세요" % SUB_MAX, fg="#c82014")
+                return
+            else:
+                chosen[kind].append({"name": o["name"], "job": o["job"]})
+            mark(kind)
+
+        def move(kind, d):
+            lb = views[kind]["lb"]
+            sel = lb.curselection()
+            if not sel:
+                return
+            i, j = sel[0], sel[0] + d
+            if 0 <= j < len(chosen[kind]):
+                chosen[kind][i], chosen[kind][j] = chosen[kind][j], chosen[kind][i]
+                mark(kind)
+                lb.selection_set(j)
+
+        def remove(kind):
+            sel = views[kind]["lb"].curselection()
+            if sel:
+                del chosen[kind][sel[0]]
+                mark(kind)
+
+        def show_head():
+            cat = state["cat"]
+            if cat:
+                head.configure(fg="#5c5c5c", text="내 메뉴를 읽은 때: %s   (역할·권한이 바뀌었으면 [내 메뉴 다시 읽기])" % cat.get("read_at", "?"))
+            else:
+                head.configure(fg="#c82014", text="아직 내 메뉴를 읽지 않았어요 — 아래 [내 메뉴 읽어오기]를 누르면 나이스·에듀파인에 로그인해서\n"
+                                                  "선생님 계정의 메뉴 목록을 읽어 와요 (1분쯤, 화면은 옮기지 않아요)")
+
+        def reset():
+            d = sub_defaults()
+            for k in chosen:
+                chosen[k] = d[k]
+                fill(k)
+
+        def save():
+            self.submenus = {k: [dict(x) for x in chosen[k]] for k in chosen}
+            K.save_state(submenus=self.submenus)
+            self.say("✅ 펼침 메뉴를 저장했어요", "#00754A")
+            close()
+
+        def close():
+            self.picker = None
+            top.destroy()
+
+        def watch():                      # 메뉴 읽기가 끝나면(파일이 바뀌면) 목록을 새로 채운다
+            if self.picker is not top or not top.winfo_exists():
+                return
+            m = self._menus_mtime()
+            if m != state["mtime"]:
+                state["mtime"], state["cat"] = m, self.load_catalog()
+                for k in chosen:
+                    fill(k)
+                show_head()
+            top.after(1500, watch)
+
+        bot = tk.Frame(top, bg=PANEL)
+        bot.pack(fill="x", padx=px(10), pady=px(10))
+        for t, cmd, side in (("저장", save, "right"), ("취소", close, "right"), ("기본값으로", reset, "left"),
+                             ("내 메뉴 읽어오기" if not state["cat"] else "내 메뉴 다시 읽기", self.read_menus, "left")):
+            tk.Button(bot, text=t, font=F(9, t == "저장"), command=cmd, relief="groove", padx=px(10),
+                      bg=GREEN if t == "저장" else TILE_BG, fg="#ffffff" if t == "저장" else WHITE).pack(side=side, padx=px(3))
+        top.protocol("WM_DELETE_WINDOW", close)
+        for k in chosen:
+            fill(k)
+        show_head()
+        top.update_idletasks()
+        w, h = max(top.winfo_reqwidth(), px(560)), top.winfo_reqheight()
+        top.geometry("%dx%d+%d+%d" % (w, h, max(0, (top.winfo_screenwidth() - w) // 2), max(0, (top.winfo_screenheight() - h) // 3)))
+        top.after(1500, watch)
+
+    def _menus_mtime(self):
+        try:
+            return self.menus_file().stat().st_mtime
+        except Exception:
+            return None
 
     # ── 타일 ──
     def make_tile(self, parent, r, c, hand=False):
