@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""업무 위젯 — 시계 · 업무포털 · 나이스 ▾ · 에듀파인 ▾ · 내부기안 단추 + 에듀파인 결재대기·통합관리 기관접수대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
+"""업무 위젯 — 시계 · 업무포털 · 나이스 ▾ · 에듀파인 ▾ · DJE Talk 단추 + 에듀파인 결재대기·통합관리 기관접수대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
 
 키트의 «바로가기위젯.pyw» 를 이 파일로 바꿔 끼워 쓴다 (설치 파일이 원본을 «바로가기위젯_원본.pyw» 로 보관한다).
 한 개만 뜨기·바탕화면/시작프로그램 바로가기·설정 창의 «위젯 켜기»·화면 밖 되돌리기는 원본의 것을 그대로 가져다 쓴다.
@@ -113,7 +113,8 @@ JOBS = {
     "sanctn": ("open_sanctn.py", "결재대기함을 열었습니다", "✅ 결재대기함을 열었습니다 (결재·반려는 안 함)"),
     "dje":    ("open_dje.py", "DJE 메신저에 로그인했습니다", "✅ DJE 메신저에 로그인했습니다"),
 }
-BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스 ▾"), ("edu", "📁", "3. 에듀파인 ▾"), ("gian", "📝", "4. 내부기안")]
+BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스 ▾"), ("edu", "📁", "3. 에듀파인 ▾"), ("dje", "💬", "4. DJE Talk")]
+BUTTON_NOT_DJE = ("gian", "📝", "4. 내부기안")      # DJE Talk 는 대전교육청 메신저 — 지역이 대전이 아니면 4번 칸은 내부기안
 # «▾» 단추를 누르면 위젯 아래(화면 아래가 모자라면 위)로 펼쳐지는 칸들 — (칸 글자, 상태 줄 이름, 할 일)
 # 할 일: JOBS 의 열쇠(문자열) 또는 ("neis", [[메뉴, 단계]…]) / ("edufine", 에듀파인 메뉴ID) — work_widget_menu.py 가 연다
 SUBMENUS = {
@@ -470,7 +471,8 @@ class Widget:
         self.sub_extra = 0           # 펼쳐서 늘어난 높이
         self.sub_up = False          # 위로 펼쳤나 (그만큼 위젯을 위로 올렸다)
         self.base_h = SIZE_H
-        for i, (kind, icon, label) in enumerate(BUTTONS):
+        buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
+        for i, (kind, icon, label) in enumerate(buttons):
             c = self.make_tile(grid, 1, i, hand=True)
             acc, badge, tint = ACCENT[kind]
             c.create_oval(TILE // 2 - px(14), px(7), TILE // 2 + px(14), px(35), fill=badge, outline="")
