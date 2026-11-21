@@ -528,7 +528,7 @@ class Widget:
         self.auto_var = tk.BooleanVar(value=self.autostart_on())
         self.auto_cache = self.auto_var.get()
         self.tray = Tray(HERE0 / "업무위젯.ico", "업무위젯 (누르면 열려요)", lambda: self.auto_cache)
-        # 메뉴가 길어지지 않게 성격별로 묶는다: 환경설정 / 화면 ▸ / 자동 실행·알림 ▸ / DJE 로그인 / 도움말 ▸ / 종료
+        # 메뉴가 길어지지 않게 성격별로 묶는다: 환경설정 / 화면 ▸ / 자동 실행·알림 ▸ / 도움말 ▸ / 종료
         self.m = tk.Menu(self.root, tearoff=0, font=F(10))
         self.m.add_command(label="환경설정 (지역·인증서·암호)", command=self.open_setup)
         vm = tk.Menu(self.m, tearoff=0, font=F(10))       # 화면 ▸ 시계 카드·투명도·크기
@@ -559,8 +559,7 @@ class Widget:
             self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
             am.add_checkbutton(label="위젯을 켤 때 DJE 메신저 자동 로그인", variable=self.dje_auto_var, command=self.toggle_dje_auto)
         self.m.add_cascade(label="자동 실행·알림", menu=am)
-        if daejeon:
-            self.m.add_command(label="DJE 메신저 로그인", command=lambda: self.click("dje"))
+        # DJE 메신저 로그인은 4번 단추(DJE Talk)로 옮겼다 — 메뉴에는 «켤 때 자동 로그인» 켜고 끄기만 남긴다
         hm = tk.Menu(self.m, tearoff=0, font=F(10))       # 도움말 ▸ 업데이트·문제 해결
         hm.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
                        command=lambda: self.check_update(manual=True))
