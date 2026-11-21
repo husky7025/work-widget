@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""업무 위젯 — 시계 · 업무포털 · 나이스 · 내부기안 · 품의등록 단추 + 에듀파인 결재대기·통합관리 기관접수대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
+"""업무 위젯 — 시계 · 업무포털 · 나이스 ▾ · 에듀파인 ▾ · 내부기안 단추 + 에듀파인 결재대기·통합관리 기관접수대기 건수 타일 (⚙ 에서 투명도·시계 카드, 마지막 위치 기억).
 
 키트의 «바로가기위젯.pyw» 를 이 파일로 바꿔 끼워 쓴다 (설치 파일이 원본을 «바로가기위젯_원본.pyw» 로 보관한다).
 한 개만 뜨기·바탕화면/시작프로그램 바로가기·설정 창의 «위젯 켜기»·화면 밖 되돌리기는 원본의 것을 그대로 가져다 쓴다.
@@ -9,11 +9,14 @@
   나이스   — 인증서 로그인 후 나이스 화면까지
   내부기안 — 에듀파인 공용서식 «표준 서식(결재4인,협조4인)» 빈 기안 창
   품의등록 — 에듀파인 학교회계 > 사업담당 > 품의/정산 > 품의등록 빈 화면
+  «▾» 단추(나이스·에듀파인)는 누르면 칸 한 줄을 아래로(화면 아래가 모자라면 위로) 펼친다 — SUBMENUS 참고.
+  펼친 칸의 하위 메뉴는 work_widget_menu.py 가 연다 (나이스: 메뉴 글자를 차례로 누름 / 에듀파인: 메뉴ID 로 gfnOpenMenu).
 모두 신청·저장·결재·상신은 하지 않는다. 인증서 암호는 이 파일이 다루지 않는다 (키트가 자격 증명 관리자에서 읽는다).
 """
 import contextlib
 import importlib.machinery
 import importlib.util
+import json
 import re
 import subprocess
 import sys
@@ -99,7 +102,7 @@ def F(size, bold=False):
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
-          "dje": ("#2b5148", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
+          "dje": ("#2b5148", "#d4e9e2", "#eef6f2"), "edu": ("#1E3932", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
 
 JOBS = {
     "portal": ("open_portal.py", "업무포털 메인 화면을 열었습니다", "✅ 업무포털 메인 화면을 열었습니다"),
@@ -110,7 +113,21 @@ JOBS = {
     "sanctn": ("open_sanctn.py", "결재대기함을 열었습니다", "✅ 결재대기함을 열었습니다 (결재·반려는 안 함)"),
     "dje":    ("open_dje.py", "DJE 메신저에 로그인했습니다", "✅ DJE 메신저에 로그인했습니다"),
 }
-BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스"), ("gian", "📝", "3. 내부기안"), ("pumui", "🧾", "4. 품의등록")]
+BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스 ▾"), ("edu", "📁", "3. 에듀파인 ▾"), ("gian", "📝", "4. 내부기안")]
+# «▾» 단추를 누르면 위젯 아래(화면 아래가 모자라면 위)로 펼쳐지는 칸들 — (칸 글자, 상태 줄 이름, 할 일)
+# 할 일: JOBS 의 열쇠(문자열) 또는 ("neis", [[메뉴, 단계]…]) / ("edufine", 에듀파인 메뉴ID) — work_widget_menu.py 가 연다
+SUBMENUS = {
+    "neis": [("나이스\n첫 화면", "나이스", "neis"),
+             ("개인근무\n상황관리", "개인근무상황관리", ("neis", [["복무", 0], ["개인근무상황관리", 1]])),
+             ("개인초과\n근무관리", "개인초과근무관리", ("neis", [["복무", 0], ["개인초과근무관리", 1]]))],
+    "edu": [("내부기안", "내부기안", "gian"),
+            ("품의등록", "품의등록", "pumui"),
+            ("기안한\n문서", "기안한문서", ("edufine", "A00AAB0106001")),
+            ("문서등록\n대장", "문서등록대장", ("edufine", "A00AAB0107001")),
+            ("품의목록", "품의목록", ("edufine", "A00FAA0104001002")),
+            ("사업관리\n카드(담당)", "사업관리카드(담당)", ("edufine", "A00FAA0101001"))],
+}
+SUB_COLS = 6
 CLOCK_KEYS = ("mo", "dd", "wk", "hh", "mi", "ss")
 CLOCK_LABEL = {"mo": "월", "dd": "일", "wk": "요일", "hh": "시", "mi": "분", "ss": "초"}
 SANCTN_EVERY_MS =30 * 60 * 1000        # 에듀파인 결재대기 건수를 30분마다 읽는다 (읽기만 함)
@@ -416,8 +433,10 @@ class Widget:
                 self.gear = b
         self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
 
+        self.bar = bar
         grid = tk.Frame(self.root, bg=PANEL)
         grid.pack(padx=PAD, pady=(px(2), 0))
+        self.grid = grid
         self.tiles = []
         self.clock = {}
         self.cards = {}
@@ -445,15 +464,25 @@ class Widget:
             self.clock[key] = (c, num)
             self.clock_vars[key] = tk.BooleanVar(value=self.clock_on[key])
         # 아랫줄: 단추 4 + 결재대기 칸 + 기관접수대기 칸 (투명도는 ⚙ 메뉴)
+        self.sub_tiles = {}          # 펼침 단추(나이스 ▾ · 에듀파인 ▾)의 칸
+        self.sub_open = None         # 지금 펼친 단추 (없으면 None)
+        self.sub_frame = None
+        self.sub_extra = 0           # 펼쳐서 늘어난 높이
+        self.sub_up = False          # 위로 펼쳤나 (그만큼 위젯을 위로 올렸다)
+        self.base_h = SIZE_H
         for i, (kind, icon, label) in enumerate(BUTTONS):
             c = self.make_tile(grid, 1, i, hand=True)
             acc, badge, tint = ACCENT[kind]
             c.create_oval(TILE // 2 - px(14), px(7), TILE // 2 + px(14), px(35), fill=badge, outline="")
             c.create_text(TILE // 2, px(21), text=icon, fill=acc, font=("Segoe UI Emoji", FS(14)))
             c.create_text(TILE // 2, px(46), text=label, fill=WHITE, font=F(8, True))
-            c.bind("<Button-1>", lambda e, k=kind: self.click(k))
+            if kind in SUBMENUS:
+                c.bind("<Button-1>", lambda e, k=kind: self.toggle_sub(k))
+                self.sub_tiles[kind] = c
+            else:
+                c.bind("<Button-1>", lambda e, k=kind: self.click(k))
             c.bind("<Enter>", lambda e, w=c, a=acc, tt=tint: w.itemconfigure("edge", outline=a, fill=tt))
-            c.bind("<Leave>", lambda e, w=c: w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
+            c.bind("<Leave>", lambda e, w=c, k=kind: self.sub_open != k and w.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         sc = self.make_tile(grid, 1, 4, hand=True)
         self.sanctn_cv = sc
         self.sanctn_num = sc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
@@ -535,6 +564,7 @@ class Widget:
         self.apply_clock()
 
     def apply_clock(self, save=True):
+        self.close_sub()
         on = [k for k in CLOCK_KEYS if self.clock_vars[k].get()]
         for k in CLOCK_KEYS:
             cv = self.clock[k][0]
@@ -546,17 +576,83 @@ class Widget:
             self.clock_row.grid()
         else:
             self.clock_row.grid_remove()
-        h = SIZE_H if on else SIZE_H - (TILE + GAP)
-        self.root.geometry("%dx%d" % (SIZE_W, h))
-        self.bgc.configure(height=h)
-        self.bgc.delete("all")
-        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, px(16), fill=PANEL, outline="#d6d1c6", width=1)
+        self.base_h = SIZE_H if on else SIZE_H - (TILE + GAP)
+        self.set_height(self.base_h)
         if save:
             try:
                 K.save_state(clock_cards=on)
             except Exception:
                 pass
             self.keep_visible()
+
+    def set_height(self, h, y=None):
+        self.root.geometry("%dx%d" % (SIZE_W, h) + ("" if y is None else "+%d+%d" % (self.root.winfo_x(), y)))
+        self.bgc.configure(height=h)
+        self.bgc.delete("all")
+        round_rect(self.bgc, 1, 1, SIZE_W - 2, h - 2, px(16), fill=PANEL, outline="#d6d1c6", width=1)
+
+    # ── 펼침 단추 (나이스 ▾ · 에듀파인 ▾) — 아래로 한 줄 펼치고, 화면 아래가 모자라면 위로 펼친다 ──
+    def toggle_sub(self, kind):
+        was = self.sub_open
+        self.close_sub()
+        if was != kind:
+            self.open_sub(kind)
+
+    def open_sub(self, kind):
+        items = SUBMENUS[kind]
+        acc, badge, tint = ACCENT[kind]
+        rows = (len(items) + SUB_COLS - 1) // SUB_COLS
+        self.sub_extra = rows * (TILE + GAP) + px(8)
+        self.root.update_idletasks()
+        y = self.root.winfo_y()
+        bottom = self.root.winfo_screenheight() - px(48)          # 작업표시줄 몫을 남긴다
+        self.sub_up = y + self.base_h + self.sub_extra > bottom and y - self.sub_extra >= 0
+        f = tk.Frame(self.root, bg=PANEL)
+        if self.sub_up:                                            # 위로: 맨 윗줄(📍⚙✕) 위에 칸을 넣고 위젯을 그만큼 올린다
+            f.pack(before=self.bar, padx=PAD, pady=(px(8), 0))
+            self.bar.pack_configure(pady=(px(2), 0))
+        else:
+            f.pack(after=self.grid, padx=PAD, pady=(px(4), 0))
+        self.bind_drag(f)
+        for i, (text, name, job) in enumerate(items):
+            c = tk.Canvas(f, width=TILE, height=TILE, bg=PANEL, highlightthickness=0, cursor="hand2")
+            c.grid(row=i // SUB_COLS, column=i % SUB_COLS, padx=GAP // 2, pady=GAP // 2)
+            round_rect(c, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=tint, outline=badge, width=1, tags="edge")
+            c.create_rectangle(px(16), px(7), TILE - px(16), px(10), fill=acc, outline="")
+            c.create_text(TILE // 2, TILE // 2 + px(3), text=text, fill=WHITE, font=F(8, True), justify="center")
+            c.bind("<Button-1>", lambda e, j=job, n=name: self.click_sub(j, n))
+            c.bind("<Enter>", lambda e, w=c, a=acc: w.itemconfigure("edge", outline=a, fill=TILE_BG))
+            c.bind("<Leave>", lambda e, w=c, t=tint, b=badge: w.itemconfigure("edge", outline=b, fill=t))
+        self.sub_frame = f
+        self.sub_open = kind
+        self.sub_tiles[kind].itemconfigure("edge", outline=acc, fill=tint)
+        self.set_height(self.base_h + self.sub_extra, y - self.sub_extra if self.sub_up else None)
+
+    def close_sub(self):
+        if self.sub_open is None:
+            return
+        kind, self.sub_open = self.sub_open, None
+        self.sub_tiles[kind].itemconfigure("edge", outline=EDGE, fill=TILE_BG)
+        if self.sub_frame is not None:
+            self.sub_frame.destroy()
+            self.sub_frame = None
+        if self.sub_up:
+            self.bar.pack_configure(pady=(px(8), 0))
+        self.root.update_idletasks()
+        y = self.root.winfo_y() + (self.sub_extra if self.sub_up else 0)
+        self.sub_up = False
+        self.sub_extra = 0
+        self.set_height(self.base_h, y)
+
+    def click_sub(self, job, name):
+        self.close_sub()
+        if isinstance(job, str):                  # 원래 단추 하나와 같은 일 (나이스 첫 화면 · 내부기안 · 품의등록)
+            self.click(job)
+            return
+        site, target = job
+        arg = json.dumps(target, ensure_ascii=False) if site == "neis" else target
+        self.click(("work_widget_menu.py", ("open-" + site, arg, name),
+                    "✅  열었습니다", "✅ %s 화면을 열었습니다 (신청·저장·결재는 안 함)" % name))
 
     # ── 타일 ──
     def make_tile(self, parent, r, c, hand=False):
@@ -597,7 +693,7 @@ class Widget:
 
     def save_pos(self):
         try:
-            K.save_state(x=self.root.winfo_x(), y=self.root.winfo_y())
+            K.save_state(x=self.root.winfo_x(), y=self.root.winfo_y() + (self.sub_extra if self.sub_up else 0))
         except Exception:
             pass
 
@@ -627,7 +723,11 @@ class Widget:
             if self.busy:
                 self.say("지금 다른 작업이 진행 중입니다 (%s)" % self.busy, "#c82014")
                 return
-        script, done, done_msg = JOBS[kind]
+        if isinstance(kind, tuple):               # 펼침 칸: (스크립트, 인자, 끝 표시, 끝 안내)
+            script, args, done, done_msg = kind
+        else:
+            script, done, done_msg = JOBS[kind]
+            args = ()
         if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not (KIT / script).exists():
             self.say("키트 파일을 찾지 못했습니다 (%s) — 업무위젯 설치를 다시 실행하세요" % script)
             return
@@ -639,9 +739,9 @@ class Widget:
         else:
             self.busy = "로그인 중"
         self.say("⏳ DJE 메신저 로그인 중… (다른 단추는 그대로 쓸 수 있어요)" if is_dje else "⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
-        threading.Thread(target=self.run_job, args=(script, done, done_msg, is_dje), daemon=True).start()
+        threading.Thread(target=self.run_job, args=(script, done, done_msg, is_dje, args), daemon=True).start()
 
-    def run_job(self, script, done, done_msg, is_dje=False):
+    def run_job(self, script, done, done_msg, is_dje=False, args=()):
         t0 = time.time()
         last = ""
         ok = False
@@ -649,7 +749,7 @@ class Widget:
         try:
             # DJE 로그인은 크롬 잠금(self.lock)을 쓰지 않는다. 대신 멈춘 창에 걸려도 150초 뒤엔 스스로 끊는다.
             with (contextlib.nullcontext() if is_dje else self.lock):
-                p = subprocess.Popen([str(K.PY), "-X", "utf8", str(KIT / script)], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                p = subprocess.Popen([str(K.PY), "-X", "utf8", str(KIT / script), *args], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                      text=True, encoding="utf-8", errors="replace", env=K.ENV, cwd=str(KIT), creationflags=K.NO_WINDOW)
                 if is_dje:
                     timer = threading.Timer(150, p.kill)
@@ -682,7 +782,7 @@ class Widget:
                 self.dje_busy = False
             else:
                 self.busy = None
-            K.log_line("업무위젯 %s %.1fs %s" % (script, time.time() - t0, "ok" if ok else "FAIL " + last))
+            K.log_line("업무위젯 %s %.1fs %s" % (" ".join([script, *args[:1]]), time.time() - t0, "ok" if ok else "FAIL " + last))
             if ok and script == "open_sanctn.py":       # 결재대기함을 연 김에 숫자도 새로 읽는다 (조용히)
                 self.root.after(4000, self.refresh_sanctn)
 
@@ -1101,6 +1201,7 @@ class Widget:
         """위젯을 숨기고 시스템 트레이(작업표시줄 오른쪽 아래)에 아이콘을 둔다. 아이콘을 누르면 되살아난다."""
         if self.mini is not None:
             return
+        self.close_sub()
         self.save_pos()
         if not self.tray.add():
             self.say("트레이 아이콘을 만들지 못했어요", "#c82014")
