@@ -23,6 +23,7 @@ import sys
 import threading
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 from datetime import datetime
 from pathlib import Path
 
@@ -99,6 +100,16 @@ def F(size, bold=False):
     return (FONT_B, size) if (bold and _ok) else ((FONT_R, size, "bold") if bold else (FONT_R, size))
 
 
+def fit_font(text, max_w, size=8, bold=True, smallest=6):
+    """칸 안에 들어가도록 글자 크기를 줄인다 (가장 긴 줄 기준). 그래도 넘치면 가장 작은 크기."""
+    lines = str(text).split("\n")
+    for s in range(size, smallest - 1, -1):
+        f = tkfont.Font(font=F(s, bold))
+        if max(f.measure(t) for t in lines) <= max_w:
+            return F(s, bold)
+    return F(smallest, bold)
+
+
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
@@ -113,7 +124,7 @@ JOBS = {
     "sanctn": ("open_sanctn.py", "결재대기함을 열었습니다", "✅ 결재대기함을 열었습니다 (결재·반려는 안 함)"),
     "dje":    ("open_dje.py", "DJE 메신저에 로그인했습니다", "✅ DJE 메신저에 로그인했습니다"),
 }
-BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스 ▾"), ("edu", "📁", "3. 에듀파인 ▾"), ("dje", "💬", "4. DJE Talk")]
+BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스"), ("edu", "📁", "3. 에듀파인"), ("dje", "💬", "4. DJE Talk")]
 BUTTON_NOT_DJE = ("gian", "📝", "4. 내부기안")      # DJE Talk 는 대전교육청 메신저 — 지역이 대전이 아니면 4번 칸은 내부기안
 # «▾» 단추를 누르면 위젯 아래(화면 아래가 모자라면 위)로 펼쳐지는 칸들 — (칸 글자, 상태 줄 이름, 할 일)
 # 할 일: JOBS 의 열쇠(문자열) 또는 ("neis", [[메뉴, 단계]…]) / ("edufine", 에듀파인 메뉴ID) — work_widget_menu.py 가 연다
@@ -472,13 +483,15 @@ class Widget:
         self.sub_up = False          # 위로 펼쳤나 (그만큼 위젯을 위로 올렸다)
         self.base_h = SIZE_H
         buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
+        lab_font = min((fit_font(b[2], TILE - px(8)) for b in buttons), key=lambda f: f[1])   # 네 칸 모두 같은 크기로
         for i, (kind, icon, label) in enumerate(buttons):
             c = self.make_tile(grid, 1, i, hand=True)
             acc, badge, tint = ACCENT[kind]
             c.create_oval(TILE // 2 - px(14), px(7), TILE // 2 + px(14), px(35), fill=badge, outline="")
             c.create_text(TILE // 2, px(21), text=icon, fill=acc, font=("Segoe UI Emoji", FS(14)))
-            c.create_text(TILE // 2, px(46), text=label, fill=WHITE, font=F(8, True))
-            if kind in SUBMENUS:
+            c.create_text(TILE // 2, px(46), text=label, fill=WHITE, font=lab_font, anchor="center")
+            if kind in SUBMENUS:                  # 펼침 단추 표시: 오른쪽 위 작은 화살표 (펼치면 위로 뒤집힌다)
+                c.create_polygon(self.chev_pts(False), fill=acc, outline="", tags="chev")
                 c.bind("<Button-1>", lambda e, k=kind: self.toggle_sub(k))
                 self.sub_tiles[kind] = c
             else:
@@ -587,6 +600,12 @@ class Widget:
                 pass
             self.keep_visible()
 
+    @staticmethod
+    def chev_pts(up):
+        x0, x1, xm = TILE - px(13), TILE - px(6), TILE - px(9.5)
+        y0, y1 = px(6), px(10)
+        return (x0, y1, x1, y1, xm, y0) if up else (x0, y0, x1, y0, xm, y1)
+
     def set_height(self, h, y=None):
         self.root.geometry("%dx%d" % (SIZE_W, h) + ("" if y is None else "+%d+%d" % (self.root.winfo_x(), y)))
         self.bgc.configure(height=h)
@@ -621,13 +640,14 @@ class Widget:
             c.grid(row=i // SUB_COLS, column=i % SUB_COLS, padx=GAP // 2, pady=GAP // 2)
             round_rect(c, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=tint, outline=badge, width=1, tags="edge")
             c.create_rectangle(px(16), px(7), TILE - px(16), px(10), fill=acc, outline="")
-            c.create_text(TILE // 2, TILE // 2 + px(3), text=text, fill=WHITE, font=F(8, True), justify="center")
+            c.create_text(TILE // 2, TILE // 2 + px(3), text=text, fill=WHITE, font=fit_font(text, TILE - px(8)), justify="center")
             c.bind("<Button-1>", lambda e, j=job, n=name: self.click_sub(j, n))
             c.bind("<Enter>", lambda e, w=c, a=acc: w.itemconfigure("edge", outline=a, fill=TILE_BG))
             c.bind("<Leave>", lambda e, w=c, t=tint, b=badge: w.itemconfigure("edge", outline=b, fill=t))
         self.sub_frame = f
         self.sub_open = kind
         self.sub_tiles[kind].itemconfigure("edge", outline=acc, fill=tint)
+        self.sub_tiles[kind].coords("chev", *self.chev_pts(True))
         self.set_height(self.base_h + self.sub_extra, y - self.sub_extra if self.sub_up else None)
 
     def close_sub(self):
@@ -635,6 +655,7 @@ class Widget:
             return
         kind, self.sub_open = self.sub_open, None
         self.sub_tiles[kind].itemconfigure("edge", outline=EDGE, fill=TILE_BG)
+        self.sub_tiles[kind].coords("chev", *self.chev_pts(False))
         if self.sub_frame is not None:
             self.sub_frame.destroy()
             self.sub_frame = None
