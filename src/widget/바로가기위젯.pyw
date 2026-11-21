@@ -43,8 +43,8 @@ try:                                         # 자동 업데이트 (서명 확�
     _uspec.loader.exec_module(UPD)
 except Exception:
     UPD = None
-UPDATE_HOUR = 10                         # 하루 한 번, 오전 10시에 새 버전 확인 (10시에 꺼져 있었으면 그날 켠 뒤 2분쯤에 한 번)
-UPDATE_POLL_MS = 5 * 60 * 1000           # 10시가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
+UPDATE_HOUR = 12                         # 새 버전 확인: 위젯을 켤 때(2분쯤 뒤) 한 번 + 매일 정오에 한 번 (정오에 꺼져 있었으면 켤 때 확인으로 대신)
+UPDATE_POLL_MS = 5 * 60 * 1000           # 정오가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
 import ctypes as _c0
 
 
@@ -643,6 +643,7 @@ class Widget:
         hm.add_command(label="문제 해결용 기록 복사 (붙여넣어 보내기)", command=self.copy_support)
         self.m.add_cascade(label="도움말 (업데이트·문제 해결)", menu=hm)
         self.upd_busy = False
+        self.upd_start_pending = True                     # 켤 때 한 번 확인 (성공하면 got_update 에서 내린다)
         self.m.add_separator()
         self.m.add_command(label="위젯 완전 종료", command=self.quit_from_menu)
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
@@ -1374,7 +1375,8 @@ class Widget:
             if manual:
                 self.upd_popup("⚠ 업데이트 확인 실패", "인터넷 연결을 확인해 주세요", "#c82014", 5000)
             return
-        K.save_state(update_checked=datetime.now().strftime("%Y-%m-%d"))
+        self.upd_start_pending = False
+        K.save_state(update_checked=datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         if not m:
             if manual:
                 self.upd_popup("✅ 최신 버전", "지금 v%s 를 쓰고 있어요" % UPD.local_version(KIT), "#00754A", 3000)
@@ -1481,11 +1483,14 @@ class Widget:
         self._upd_pop = None
 
     def update_due(self, now=None):
-        """오늘 아직 확인하지 않았고 오전 10시가 지났으면 True."""
+        """켠 뒤 아직 확인에 성공하지 못했거나, 정오가 지났는데 오늘 정오 이후로 확인한 적이 없으면 True."""
+        if getattr(self, "upd_start_pending", True):
+            return True
         now = now or datetime.now()
         if now.hour < UPDATE_HOUR:
             return False
-        return K.load_state().get("update_checked") != now.strftime("%Y-%m-%d")
+        noon = now.strftime("%Y-%m-%d ") + "%02d:00:00" % UPDATE_HOUR
+        return str(K.load_state().get("update_checked") or "") < noon      # 예전 형식("YYYY-MM-DD")도 정오 전으로 친다
 
     def update_loop(self):
         try:
