@@ -475,7 +475,6 @@ class Widget:
         self.notify_on = bool(st.get("notify_sanctn", True))      # 결재대기가 새로 오면 윈도우 알림
         self.dje_auto = bool(st.get("dje_autostart", False))      # 위젯을 켤 때 DJE 메신저에 자동 로그인 (기본 꺼짐)
         self.sanctn_last = st.get("sanctn_last")                  # 마지막으로 읽은 [결재대기, 긴급] — 껐다 켜도 같은 건으로 또 알리지 않게
-        self.jeopsu_last = st.get("jeopsu_last")                  # 마지막으로 읽은 기관접수대기 건수 (같은 까닭)
         self.pinned = bool(st.get("pinned", True))              # 📍 항상 위 — 껐으면 다음에도 꺼진 채로
         self.root.attributes("-topmost", self.pinned)
         self.root.configure(bg=KEY)
@@ -591,10 +590,8 @@ class Widget:
         self.jeopsu_num = jc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         jc.create_text(TILE // 2, px(44), text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
-        jc.bind("<Button-3>", lambda e: (self.refresh_jeopsu(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
-        self.jeopsu_look = (TILE_BG, EDGE, 1, False)           # 결재대기 칸과 같은 방식 — 접수할 문서가 있으면 노란 음영
-        jc.bind("<Enter>", lambda e: self.paint_jeopsu(hover=True))
-        jc.bind("<Leave>", lambda e: self.paint_jeopsu())
+        jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#2b5148", fill="#eef6f2"))
+        jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.jeopsu_busy = False
         self.opa_var = tk.IntVar(value=int(round(self.opacity * 10) * 10))
 
@@ -633,7 +630,7 @@ class Widget:
         am = tk.Menu(self.m, tearoff=0, font=F(10))       # 자동 실행·알림 ▸ 켜고 끄는 항목들
         am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
-        am.add_checkbutton(label="결재대기·교데통 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
+        am.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
         daejeon = is_daejeon()                # DJE 메신저는 대전교육청용 — 지역이 대전일 때만 메뉴에 보인다
         if daejeon:
             self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
@@ -1202,17 +1199,10 @@ class Widget:
 
     def paint_sanctn(self, hover=False):
         """결재대기 칸 색칠. 평소엔 sanctn_look · 마우스를 올리면 알림 중엔 같은 색을 조금 진하게, 아니면 기존 초록."""
-        self.paint_count(self.sanctn_cv, self.sanctn_look, hover)
-
-    def paint_jeopsu(self, hover=False):
-        self.paint_count(self.jeopsu_cv, self.jeopsu_look, hover)
-
-    @staticmethod
-    def paint_count(cv, look, hover):
-        fill, outline, width, alert = look
+        fill, outline, width, alert = self.sanctn_look
         if hover:
             fill, outline, width = (("#fbd2cc" if fill == "#fde3df" else "#ffe69a"), outline, 3) if alert else ("#eef6f2", GREEN, 1)
-        cv.itemconfigure("edge", fill=fill, outline=outline, width=width)
+        self.sanctn_cv.itemconfigure("edge", fill=fill, outline=outline, width=width)
 
     def notify_sanctn(self, wait, urgent):
         """결재대기·긴급이 지난번보다 «늘었을 때만» 윈도우 알림을 띄운다 (처음 읽을 때는 기준만 저장 · 줄거나 같으면 조용히)."""
@@ -1231,27 +1221,12 @@ class Widget:
             title, text, warn = "결재대기가 새로 왔어요", "새로 %d건 · 결재대기 모두 %d건" % (new_wait, wait), False
         else:
             return
-        self.balloon(title, text, warn)
-
-    def notify_jeopsu(self, wait, alert=True):
-        """기관접수대기가 지난번보다 «늘었을 때만» 알린다. alert=False 면 기준만 바꾼다 (선생님이 화면을 직접 열어 본 경우)."""
-        prev = self.jeopsu_last
-        self.jeopsu_last = wait
-        try:
-            K.save_state(jeopsu_last=wait)
-        except Exception:
-            pass
-        if not alert or not self.notify_on or not isinstance(prev, int) or wait <= prev:
-            return
-        self.balloon("교데통 기관접수가 새로 왔어요", "새로 %d건 · 기관접수대기 모두 %d건" % (wait - prev, wait), False)
-
-    def balloon(self, title, text, warn):
         try:
             temp = self.tray.balloon(title, text, warn)
         except Exception as e:
             K.log_line("업무위젯 알림 오류 %r" % e)
             return
-        K.log_line("업무위젯 알림: %s" % text)
+        K.log_line("업무위젯 결재대기 알림: %s" % text)
         # 트레이 아이콘은 항상 달려 있으므로 알림 뒤에 떼지 않는다
 
     def on_size(self):
@@ -1291,7 +1266,7 @@ class Widget:
             "화면 배율: %d%% · 위젯 크기: %d%%" % (round(DPI * 100), UI_PCT),
             "설정(지역·인증서): %s" % ("있음" if K.configured() else "없음"),
             "구글 크롬 설치: %s" % ("있음" if chrome else "못 찾음"),
-            "결재대기·교데통 알림: %s · 항상 위: %s" % ("켜짐" if self.notify_on else "꺼짐", "켜짐" if self.pinned else "꺼짐"),
+            "결재대기 알림: %s · 항상 위: %s" % ("켜짐" if self.notify_on else "꺼짐", "켜짐" if self.pinned else "꺼짐"),
             "--- 최근 기록 %d줄 (개인 정보는 *** 로 가렸어요) ---" % len(lines),
         ]
         return self.mask_private("\n".join(head + lines))
@@ -1336,27 +1311,20 @@ class Widget:
     def toggle_notify(self):
         self.notify_on = self.notify_var.get()
         K.save_state(notify_sanctn=self.notify_on)
-        self.say("결재대기·교데통 알림을 켰어요" if self.notify_on else "결재대기·교데통 알림을 껐어요", "#00754A" if self.notify_on else "#5c5c5c")
+        self.say("결재대기 알림을 켰어요" if self.notify_on else "결재대기 알림을 껐어요", "#00754A" if self.notify_on else "#5c5c5c")
 
     def sanctn_loop(self):
         self.refresh_sanctn()
         self.root.after(SANCTN_EVERY_MS, self.sanctn_loop)
 
     # ── 교육행정데이터통합관리 기관접수대기 건수 (check_jeopsu.py 가 숫자만 읽는다 · 30분마다, 결재대기와 엇갈리게) ──
-    def refresh_jeopsu(self, manual=False):
+    def refresh_jeopsu(self):
         if self.jeopsu_busy or self.busy or self.sanctn_busy:     # 다른 작업 중이면 이번 차례는 건너뛴다
-            if manual:
-                self.say("다른 작업이 끝난 뒤 다시 눌러 주세요", "#c82014")
             return
         script = KIT / "check_jeopsu.py"
-        if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not script.exists():
-            if manual:
-                self.say("키트에 check_jeopsu.py 가 없습니다 — 업무위젯 설치를 다시 실행하세요")
-            return
-        if not K.configured():
+        if not (KIT / ".venv" / "Scripts" / "python.exe").exists() or not script.exists() or not K.configured():
             return
         self.jeopsu_busy = True
-        self.jeopsu_manual = manual
         self.jeopsu_cv.itemconfigure(self.jeopsu_num, fill="#a8a49b")
         threading.Thread(target=self.run_jeopsu, args=(script,), daemon=True).start()
 
@@ -1378,25 +1346,13 @@ class Widget:
         self.root.after(0, self.show_jeopsu, res, reason, True)
 
     def show_jeopsu(self, res, reason, from_check):
-        """from_check: 30분 조회·우클릭(check_jeopsu.py) 결과면 True, 화면을 열면서 읽은 건수면 False."""
-        manual = from_check and getattr(self, "jeopsu_manual", False)
         if from_check:
             self.jeopsu_busy = False
-            self.jeopsu_manual = False
         if res is not None:
-            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text=str(res), fill="#b7791f" if res else GREEN)
-            self.jeopsu_look = ("#fff0c2", "#e0a526", 2, True) if res else (TILE_BG, EDGE, 1, False)
-            self.paint_jeopsu()
-            if manual:
-                self.say("✅ 기관접수대기 %d건 (%s)" % (res, datetime.now().strftime("%H:%M")), "#00754A")
-            self.notify_jeopsu(res, alert=from_check)
+            self.jeopsu_cv.itemconfigure(self.jeopsu_num, text=str(res), fill="#2b5148" if res else GREEN)
         elif from_check:
-            self.jeopsu_look = (TILE_BG, EDGE, 1, False)           # 못 읽었을 땐 색을 빼서 «0건» 으로 오해하지 않게
-            self.paint_jeopsu()
             self.jeopsu_cv.itemconfigure(self.jeopsu_num, text="--", fill="#a8a49b")
             K.log_line("업무위젯 기관접수대기 못 읽음: " + reason)
-            if manual:
-                self.say("⚠️ " + reason, "#c82014")
 
     # ── 자동 업데이트 (work_widget_update.py: 서명 확인 → 받기 → 덮어쓰기 → 위젯 다시 켜기) ──
     def check_update(self, manual=False):
