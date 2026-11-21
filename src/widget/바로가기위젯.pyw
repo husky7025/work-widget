@@ -97,7 +97,8 @@ def F(size, bold=False):
 
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
-          "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
+          "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
+          "dje": ("#2b5148", "#d4e9e2", "#eef6f2")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
 
 JOBS = {
     "portal": ("open_portal.py", "업무포털 메인 화면을 열었습니다", "✅ 업무포털 메인 화면을 열었습니다"),
@@ -106,11 +107,21 @@ JOBS = {
     "pumui":  ("open_pumui.py", "품의등록 화면을 열었습니다", "✅ 품의등록 화면을 열었습니다 (입력·저장·결재요청은 안 함)"),
     "jeopsu": ("open_jeopsu.py", "기관접수대기 화면을 열었습니다", "✅ 기관접수대기 화면을 열었습니다 (접수·제출은 안 함)"),
     "sanctn": ("open_sanctn.py", "결재대기함을 열었습니다", "✅ 결재대기함을 열었습니다 (결재·반려는 안 함)"),
+    "dje":    ("open_dje.py", "DJE 메신저에 로그인했습니다", "✅ DJE 메신저에 로그인했습니다"),
 }
 BUTTONS = [("portal", "🏫", "1. 업무포털"), ("neis", "🗂", "2. 나이스"), ("gian", "📝", "3. 내부기안"), ("pumui", "🧾", "4. 품의등록")]
 CLOCK_KEYS = ("mo", "dd", "wk", "hh", "mi", "ss")
 CLOCK_LABEL = {"mo": "월", "dd": "일", "wk": "요일", "hh": "시", "mi": "분", "ss": "초"}
 SANCTN_EVERY_MS =30 * 60 * 1000        # 에듀파인 결재대기 건수를 30분마다 읽는다 (읽기만 함)
+
+
+def is_daejeon():
+    """환경설정의 지역이 대전이면 True. 지역이 아직 없으면 대전(기본값)으로 본다."""
+    try:
+        url = (K.cfg() or {}).get("neis_url") or ""
+    except Exception:
+        url = ""
+    return (not url) or "//dje." in url
 
 
 def round_rect(c, x1, y1, x2, y2, r, **kw):
@@ -362,6 +373,7 @@ class Widget:
         self.root.title("업무 위젯")
         self.root.overrideredirect(True)
         self.notify_on = bool(st.get("notify_sanctn", True))      # 결재대기가 새로 오면 윈도우 알림
+        self.dje_auto = bool(st.get("dje_autostart", False))      # 위젯을 켤 때 DJE 메신저에 자동 로그인 (기본 꺼짐)
         self.sanctn_last = st.get("sanctn_last")                  # 마지막으로 읽은 [결재대기, 긴급] — 껐다 켜도 같은 건으로 또 알리지 않게
         self.pinned = bool(st.get("pinned", True))              # 📍 항상 위 — 껐으면 다음에도 꺼진 채로
         self.root.attributes("-topmost", self.pinned)
@@ -470,31 +482,44 @@ class Widget:
         self.auto_var = tk.BooleanVar(value=self.autostart_on())
         self.auto_cache = self.auto_var.get()
         self.tray = Tray(HERE0 / "업무위젯.ico", "업무위젯 (누르면 열려요)", lambda: self.auto_cache)
+        # 메뉴가 길어지지 않게 성격별로 묶는다: 환경설정 / 화면 ▸ / 자동 실행·알림 ▸ / DJE 로그인 / 도움말 ▸ / 종료
         self.m = tk.Menu(self.root, tearoff=0, font=F(10))
         self.m.add_command(label="환경설정 (지역·인증서·암호)", command=self.open_setup)
-        self.m.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
-        cm = tk.Menu(self.m, tearoff=0, font=F(10))
+        vm = tk.Menu(self.m, tearoff=0, font=F(10))       # 화면 ▸ 시계 카드·투명도·크기
+        cm = tk.Menu(vm, tearoff=0, font=F(10))
         for key in CLOCK_KEYS:
             cm.add_checkbutton(label=CLOCK_LABEL[key], variable=self.clock_vars[key], command=self.apply_clock)
         cm.add_separator()
         cm.add_command(label="모두 켜기", command=lambda: self.set_all_clock(True))
         cm.add_command(label="모두 끄기 (위젯이 작아져요)", command=lambda: self.set_all_clock(False))
-        self.m.add_cascade(label="시계 카드 보이기", menu=cm)
-        om = tk.Menu(self.m, tearoff=0, font=F(10))
+        vm.add_cascade(label="시계 카드 보이기", menu=cm)
+        om = tk.Menu(vm, tearoff=0, font=F(10))
         for pct in range(100, 20, -10):
             om.add_radiobutton(label="%d%%" % pct + ("  (흐리게)" if pct == 30 else ""), value=pct, variable=self.opa_var,
                                command=lambda: self.on_opacity(self.opa_var.get()))
-        self.m.add_cascade(label="투명도", menu=om)
+        vm.add_cascade(label="투명도", menu=om)
         self.size_var = tk.IntVar(value=UI_PCT)
-        sm = tk.Menu(self.m, tearoff=0, font=F(10))
+        sm = tk.Menu(vm, tearoff=0, font=F(10))
         for pct, name in SIZE_CHOICES:
             sm.add_radiobutton(label=name, value=pct, variable=self.size_var, command=self.on_size)
-        self.m.add_cascade(label="위젯 크기", menu=sm)
+        vm.add_cascade(label="위젯 크기", menu=sm)
+        self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
+        am = tk.Menu(self.m, tearoff=0, font=F(10))       # 자동 실행·알림 ▸ 켜고 끄는 항목들
+        am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
-        self.m.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
-        self.m.add_command(label="문제 해결용 기록 복사 (붙여넣어 보내기)", command=self.copy_support)
-        self.m.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
-                           command=lambda: self.check_update(manual=True))
+        am.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
+        daejeon = is_daejeon()                # DJE 메신저는 대전교육청용 — 지역이 대전일 때만 메뉴에 보인다
+        if daejeon:
+            self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
+            am.add_checkbutton(label="위젯을 켤 때 DJE 메신저 자동 로그인", variable=self.dje_auto_var, command=self.toggle_dje_auto)
+        self.m.add_cascade(label="자동 실행·알림", menu=am)
+        if daejeon:
+            self.m.add_command(label="DJE 메신저 로그인", command=lambda: self.click("dje"))
+        hm = tk.Menu(self.m, tearoff=0, font=F(10))       # 도움말 ▸ 업데이트·문제 해결
+        hm.add_command(label="업데이트 확인 (지금 v%s)" % (UPD.local_version(KIT) if UPD else "?"),
+                       command=lambda: self.check_update(manual=True))
+        hm.add_command(label="문제 해결용 기록 복사 (붙여넣어 보내기)", command=self.copy_support)
+        self.m.add_cascade(label="도움말 (업데이트·문제 해결)", menu=hm)
         self.upd_busy = False
         self.m.add_separator()
         self.m.add_command(label="위젯 완전 종료", command=self.quit_from_menu)
@@ -601,7 +626,7 @@ class Widget:
             self.say("먼저 ⚙ → 환경설정 (지역·인증서·암호)", "#c82014")
             return
         self.busy = "로그인 중"
-        self.say("⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
+        self.say("⏳ DJE 메신저 로그인 중… (몇 초간 마우스를 만지지 마세요)" if kind == "dje" else "⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
         threading.Thread(target=self.run_job, args=(script, done, done_msg), daemon=True).start()
 
     def run_job(self, script, done, done_msg):
@@ -782,6 +807,32 @@ class Widget:
         except Exception as e:
             K.log_line("업무위젯 기록 복사 오류 %r" % e)
             self.say("기록을 복사하지 못했어요", "#c82014")
+
+    def toggle_dje_auto(self):
+        self.dje_auto = self.dje_auto_var.get()
+        K.save_state(dje_autostart=self.dje_auto)
+        self.say("다음부터 위젯을 켜면 DJE 메신저에 자동 로그인해요" if self.dje_auto else "DJE 메신저 자동 로그인을 껐어요",
+                 "#00754A" if self.dje_auto else "#5c5c5c")
+
+    def dje_watch(self, until):
+        """DJE 메신저 창이 나타나기를 지켜보다가, 보이는 순간 로그인을 시작한다 (직접 켜지는 않는다 — 윈도우 시작 때 스스로 켜지는 경우용).
+        지켜보기는 가벼운 창 확인뿐이라 다른 단추를 막지 않는다. 최대 10분만 지켜보고 그만둔다."""
+        if not (self.dje_auto and is_daejeon()):
+            return
+        try:
+            _user32.FindWindowW.restype = _wt.HWND
+            _user32.IsWindowVisible.argtypes = [_wt.HWND]
+            hwnd = _user32.FindWindowW("TFM_ucware_main.UnicodeClass", None)
+            seen = bool(hwnd) and bool(_user32.IsWindowVisible(hwnd))
+        except Exception:
+            return
+        if seen:
+            if not self.busy and not (self.sanctn_busy or self.jeopsu_busy):
+                self.click("dje")               # 켜져 있으면 바로 로그인 (이미 로그인돼 있으면 스크립트가 알아서 건너뜀)
+                return
+        if time.time() < until:
+            self.root.after(300, lambda: self.dje_watch(until))
+
 
     def toggle_notify(self):
         self.notify_on = self.notify_var.get()
@@ -1203,6 +1254,8 @@ class Widget:
         self.root.after(200, self.keep_visible)
         self.tick()
         self.poll()
+        if self.dje_auto and is_daejeon() and K.configured():
+            self.root.after(1_000, lambda: self.dje_watch(time.time() + 600))  # 켠 지 1초 뒤부터 DJE 메신저를 지켜보다 뜨면 자동 로그인 (체크했을 때만)
         self.root.after(30_000, self.sanctn_loop)           # 켠 지 30초 뒤 첫 읽기 (그 사이 업무포털 로그인을 마칠 시간)
         self.root.after(30_000, self.jeopsu_first)          # 같이 30초 뒤 — 결재대기 읽기가 끝나기를 기다렸다가 이어서 읽는다
         if UPD is not None:

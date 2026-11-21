@@ -95,12 +95,18 @@ PW_CHECK_NEW = '''    saved_pw = False
 '''
 
 PATCHES = {
+    # 설정에 지역이 아직 없을 때 쓰는 기본 나이스 주소 — 서울(sen) 대신 대전(dje)
+    "teacher_config.py": [
+        ('"neis_url": "https://sen.neis.go.kr/jsp/main.jsp"', '"neis_url": "https://dje.neis.go.kr/jsp/main.jsp"'),
+    ],
     # 출근·퇴근 기본값 08:00 / 16:00 (처음 설치할 때 칸에 미리 채워지는 값 — 선생님이 바꿀 수는 있다)
     "widget/바로가기_설정창.pyw": [
         (PW_OLD, PW_NEW),
         ('old.get("work_start", "08:40")', 'old.get("work_start", "08:00")'),
         ('old.get("work_end", "16:20")', 'old.get("work_end", "16:00")'),
         ('08:40 처럼 적어 주세요', '08:00 처럼 적어 주세요'),
+        # 처음 설치할 때 지역 칸에 미리 «대전»이 골라져 있게 한다 (이미 저장된 지역이 있으면 그 값이 먼저 쓰인다)
+        ('            return name\n    return "서울"\n', '            return name\n    return "대전"\n'),
         # 환경설정 창이 늦게 뜨는 까닭 2: keyring 을 읽는 데 약 0.8초, 저장된 암호 확인(get_password)에 약 0.4초 — 창을 먼저 띄우고 뒤에서 확인한다
         ('import keyring  # noqa: E402\n', KR_LAZY),
         ('    saved_pw = bool(old.get("cert_name") and keyring.get_password(teacher_config.KEYRING_SERVICE, old["cert_name"]))\n'
