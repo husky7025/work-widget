@@ -1108,7 +1108,8 @@ class Widget:
                         self.root.after(0, self.show_jeopsu, int(line[7:].strip()), "", False)
                     if done in line:
                         ok = True
-                        self.root.after(0, self.say, done_msg, "#00754A")
+                        msg = "✅ 이미 로그인되어 있습니다" if (is_dje and "이미 로그인" in line) else done_msg
+                        self.root.after(0, self.say, msg, "#00754A")
                     elif line.startswith(("⏸", "❌")):
                         # 작은따옴표 안(인증서 이름 등)은 가린다
                         last = re.sub(r"'[^']*'", "'***'", re.sub(r"^[⏸❌]\s*", "", line))[:110]
