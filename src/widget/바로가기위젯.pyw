@@ -17,6 +17,7 @@ import contextlib
 import importlib.machinery
 import importlib.util
 import json
+import math
 import os
 import re
 import subprocess
@@ -529,6 +530,7 @@ class Widget:
         self.root.title("업무 위젯")
         self.root.overrideredirect(True)
         self.notify_on = bool(st.get("notify_sanctn", True))      # 결재대기가 새로 오면 윈도우 알림
+        self.glow_on = bool(st.get("glow_sanctn", True))          # 결재대기가 있으면 칸이 은은하게 숨 쉬듯 반짝인다
         self.dje_auto = bool(st.get("dje_autostart", False))      # 위젯을 켤 때 DJE 메신저에 자동 로그인 (기본 꺼짐)
         self.sanctn_last = st.get("sanctn_last")                  # 마지막으로 읽은 [결재대기, 긴급] — 껐다 켜도 같은 건으로 또 알리지 않게
         self.pinned = bool(st.get("pinned", True))              # 📍 항상 위 — 껐으면 다음에도 꺼진 채로
@@ -642,6 +644,9 @@ class Widget:
         sc.bind("<Button-1>", lambda e: self.click("sanctn"))                 # 눌러서 결재대기함 열기
         sc.bind("<Button-3>", lambda e: (self.refresh_sanctn(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
         self.sanctn_look = (TILE_BG, EDGE, 1, False)           # (바탕, 테두리, 테두리 굵기, 알림 중?) — 결재대기가 있으면 눈에 띄게 바뀐다
+        self.sanctn_hover = False
+        self.glow_id = None          # 반짝임 타이머 (after id)
+        self.glow_t0 = 0.0
         sc.bind("<Enter>", lambda e: self.paint_sanctn(hover=True))
         sc.bind("<Leave>", lambda e: self.paint_sanctn())
         self.sanctn_busy = False
@@ -694,6 +699,8 @@ class Widget:
         am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
         self.notify_var = tk.BooleanVar(value=self.notify_on)
         am.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
+        self.glow_var = tk.BooleanVar(value=self.glow_on)
+        am.add_checkbutton(label="결재대기 반짝임 (있으면 칸이 은은하게 깜빡여요)", variable=self.glow_var, command=self.toggle_glow)
         daejeon = is_daejeon()                # DJE 메신저는 대전교육청용 — 지역이 대전일 때만 메뉴에 보인다
         if daejeon:
             self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
@@ -1392,12 +1399,50 @@ class Widget:
             if manual:
                 self.say("⚠️ " + reason, "#c82014")
 
-    def paint_sanctn(self, hover=False):
-        """결재대기 칸 색칠. 평소엔 sanctn_look · 마우스를 올리면 알림 중엔 같은 색을 조금 진하게, 아니면 기존 초록."""
+    # 반짝임 색: (옅은 바탕, 진한 바탕, 옅은 테두리, 진한 테두리) — 이 사이를 숨 쉬듯 오간다
+    GLOW = {"#fde3df": ("#fff3f1", "#fbcfc8", "#efb0a7", "#c82014"),
+            "#fff0c2": ("#fff9e6", "#ffe597", "#f1d48a", "#e0a526")}
+    GLOW_PERIOD = 2.4            # 한 번 숨 쉬는 데 걸리는 초
+    GLOW_TICK = 50               # 색을 바꾸는 간격 (ms)
+
+    def paint_sanctn(self, hover=None):
+        """결재대기 칸 색칠. 평소엔 sanctn_look · 마우스를 올리면 알림 중엔 같은 색을 조금 진하게, 아니면 기존 초록.
+        결재대기가 있고 반짝임이 켜져 있으면 glow_tick 이 바탕·테두리를 은은하게 오가게 한다 (마우스를 올리면 멈춤)."""
+        if hover is not None:
+            self.sanctn_hover = hover
         fill, outline, width, alert = self.sanctn_look
-        if hover:
+        if self.sanctn_hover:
             fill, outline, width = (("#fbd2cc" if fill == "#fde3df" else "#ffe69a"), outline, 3) if alert else ("#eef6f2", GREEN, 1)
         self.sanctn_cv.itemconfigure("edge", fill=fill, outline=outline, width=width)
+        glowing = alert and self.glow_on and fill in self.GLOW
+        if glowing and self.glow_id is None:
+            self.glow_t0 = time.monotonic()
+            self.glow_id = self.root.after(self.GLOW_TICK, self.glow_tick)
+        elif not glowing and self.glow_id is not None:
+            self.root.after_cancel(self.glow_id)
+            self.glow_id = None
+
+    @staticmethod
+    def _mix(a, b, k):
+        a, b = int(a[1:], 16), int(b[1:], 16)
+        return "#%02x%02x%02x" % tuple(round(((a >> s) & 255) * (1 - k) + ((b >> s) & 255) * k) for s in (16, 8, 0))
+
+    def glow_tick(self):
+        self.glow_id = None
+        fill, outline, width, alert = self.sanctn_look
+        g = self.GLOW.get(fill)
+        if not (alert and self.glow_on and g) or self.sanctn_hover:
+            return                                  # 결재대기가 없어졌거나 꺼졌으면 멈춘다 (마우스가 떠나면 paint_sanctn 이 다시 켠다)
+        if self.root.state() == "normal":          # 숨겨 둔 동안은 색을 바꾸지 않는다
+            k = (1 - math.cos(2 * math.pi * (time.monotonic() - self.glow_t0) / self.GLOW_PERIOD)) / 2
+            self.sanctn_cv.itemconfigure("edge", fill=self._mix(g[0], g[1], k), outline=self._mix(g[2], g[3], k), width=width)
+        self.glow_id = self.root.after(self.GLOW_TICK, self.glow_tick)
+
+    def toggle_glow(self):
+        self.glow_on = self.glow_var.get()
+        K.save_state(glow_sanctn=self.glow_on)
+        self.paint_sanctn()
+        self.say("결재대기 반짝임을 켰어요" if self.glow_on else "결재대기 반짝임을 껐어요", "#00754A" if self.glow_on else "#5c5c5c")
 
     def notify_sanctn(self, wait, urgent):
         """결재대기·긴급이 지난번보다 «늘었을 때만» 윈도우 알림을 띄운다 (처음 읽을 때는 기준만 저장 · 줄거나 같으면 조용히)."""
