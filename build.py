@@ -7,7 +7,9 @@
   build.cmd --export-key 폴더  비밀 열쇠를 USB 등에 백업한다 (잃어버리면 다시는 업데이트를 올릴 수 없다)
   build.cmd --import-key 파일  백업해 둔 비밀 열쇠를 새 PC에 넣는다
 
-1) 나이스 자동화 키트(MIT)를 KIT_SHA 커밋으로 고정해 받는다 (%TEMP%\\work-widget-build\\cache 에 보관)
+1) 나이스 자동화 키트(MIT)를 KIT_SHA 커밋으로 고정해 쓴다 — 저장소에 넣어 둔 vendor/kit-<sha 12자>.zip 을 먼저 쓰고,
+   없을 때만 GitHub 에서 받는다 (%TEMP%\\work-widget-build\\cache 에 보관). 원본 저장소가 2026-11-23 에 404 가 되어
+   v0.10.1 릴리스 묶음에서 키트를 되살려 넣었다 (vendor/rebuild_kit_from_release.py — v0.10.1 을 다시 빌드해 키트 부분이 같음을 확인)
 2) src/ 의 업무 위젯 파일을 얹고, 설정 창 문구 등을 바꾼다 → payload/app.zip
 3) 겉 묶음에는 영문 이름 파일만 넣는다 (일부 윈도우의 «모두 풀기»가 zip 안 한글 이름을 깨뜨려 설치가 멈추는 것을 막는다.
    한글 이름 파일은 app.zip 안에 두고, 설치기가 PowerShell Expand-Archive 로 UTF-8 이름 그대로 푼다)
@@ -201,6 +203,9 @@ def build(*args, **kwargs):
 
 
 def fetch_kit() -> Path:
+    vendored = HERE / "vendor" / f"kit-{KIT_SHA[:12]}.zip"
+    if vendored.exists():
+        return vendored
     cache = BUILD / "cache" / f"kit-{KIT_SHA[:12]}.zip"
     if not cache.exists():
         cache.parent.mkdir(parents=True, exist_ok=True)
