@@ -66,7 +66,7 @@ def main():
     with sync_playwright() as p:
         browser = W.connect_sync(p, W.SITES[site]["port"])
         ctx = browser.contexts[0]
-        blank = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
+        blank = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/", "edge://newtab/")
         portal = next((pg for pg in ctx.pages if "bpm_man_mn00_001" in pg.url), None)
         if portal is None:                              # 로그인이 안 돼 있으면 open_portal 과 같은 방법으로 로그인
             portal = (next((pg for pg in ctx.pages if any(k in pg.url for k in W.SITES[site]["match"])), None)

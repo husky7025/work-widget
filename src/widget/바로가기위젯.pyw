@@ -269,6 +269,26 @@ def clock_saved_on(saved):
 SANCTN_EVERY_MS =30 * 60 * 1000        # 에듀파인 결재대기 건수를 30분마다 읽는다 (읽기만 함)
 
 
+BROWSERS = (("chrome", "구글 크롬", ("Google", "Chrome", "Application", "chrome.exe")),
+            ("edge", "마이크로소프트 엣지", ("Microsoft", "Edge", "Application", "msedge.exe")))
+
+
+def browser_installed(kind):
+    rel = next(r for k, _, r in BROWSERS if k == kind)
+    return any(Path(b).joinpath(*rel).exists()
+               for b in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")) if b)
+
+
+def browser_now(st=None):
+    """위젯이 지금 쓰는 브라우저 — 엔진(바로가기_엔진.py _pick_browser)과 같은 규칙: 고른 값, 처음엔 크롬, 안 깔려 있으면 다른 하나."""
+    want = (st if st is not None else K.load_state()).get("browser")
+    want = want if want in ("chrome", "edge") else "chrome"
+    if browser_installed(want):
+        return want
+    other = "edge" if want == "chrome" else "chrome"
+    return other if browser_installed(other) else want
+
+
 def is_daejeon():
     """환경설정의 지역이 대전이면 True. 지역이 아직 없으면 대전(기본값)으로 본다."""
     try:
@@ -694,6 +714,13 @@ class Widget:
         self.mine_var = tk.BooleanVar(value=MINE_ON)
         vm.add_checkbutton(label="업무전용 칸 쓰기 (끄면 예전 배치 · 위젯이 다시 켜져요)", variable=self.mine_var, command=self.on_mine)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
+        self.browser_var = tk.StringVar(value=browser_now())   # 브라우저 ▸ 크롬 / 엣지 — 위젯이 띄우는 창
+        bm = tk.Menu(self.m, tearoff=0, font=F(10))
+        for kind, name, _ in BROWSERS:
+            ok = browser_installed(kind)
+            bm.add_radiobutton(label=name + ("" if ok else "  (설치 안 됨)"), value=kind, variable=self.browser_var,
+                               command=self.on_browser, state="normal" if ok else "disabled")
+        self.m.add_cascade(label="브라우저 (크롬·엣지)", menu=bm)
         self.m.add_command(label="펼침 메뉴 고르기 (나이스·에듀파인%s)" % ("·업무전용" if MINE_ON else ""), command=self.open_picker)
         am = tk.Menu(self.m, tearoff=0, font=F(10))       # 자동 실행·알림 ▸ 켜고 끄는 항목들
         am.add_checkbutton(label="윈도우 시작할 때 자동 실행", variable=self.auto_var, command=self.toggle_autostart)
@@ -1288,7 +1315,7 @@ class Widget:
             self.dje_busy = True
         else:
             self.busy = "로그인 중"
-        self.say("⏳ DJE 메신저 로그인 중… (다른 단추는 그대로 쓸 수 있어요)" if is_dje else "⏳ 로그인 중… (크롬 창이 뜹니다)", "#5c5c5c")
+        self.say("⏳ DJE 메신저 로그인 중… (다른 단추는 그대로 쓸 수 있어요)" if is_dje else "⏳ 로그인 중… (%s 창이 뜹니다)" % ("엣지" if browser_now() == "edge" else "크롬"), "#5c5c5c")
         threading.Thread(target=self.run_job, args=(script, done, done_msg, is_dje, args), daemon=True).start()
 
     def run_job(self, script, done, done_msg, is_dje=False, args=()):
@@ -1520,8 +1547,6 @@ class Widget:
 
     def support_text(self):
         import platform
-        chrome = any((Path(b) / "Google" / "Chrome" / "Application" / "chrome.exe").exists()
-                     for b in (K.os.environ.get("PROGRAMFILES"), K.os.environ.get("PROGRAMFILES(X86)"), K.os.environ.get("LOCALAPPDATA")) if b)
         try:
             lines = K.LOG.read_text(encoding="utf-8").splitlines()[-30:] if K.LOG.exists() else []
         except Exception:
@@ -1532,7 +1557,9 @@ class Widget:
             "윈도우: %s · 파이썬 %s" % (platform.platform(), platform.python_version()),
             "화면 배율: %d%% · 위젯 크기: %d%%" % (round(DPI * 100), UI_PCT),
             "설정(지역·인증서): %s" % ("있음" if K.configured() else "없음"),
-            "구글 크롬 설치: %s" % ("있음" if chrome else "못 찾음"),
+            "브라우저: %s 사용 · 크롬 %s · 엣지 %s" % ("엣지" if browser_now() == "edge" else "크롬",
+                                                 "있음" if browser_installed("chrome") else "없음",
+                                                 "있음" if browser_installed("edge") else "없음"),
             "결재대기 알림: %s · 항상 위: %s" % ("켜짐" if self.notify_on else "꺼짐", "켜짐" if self.pinned else "꺼짐"),
             "--- 최근 기록 %d줄 (개인 정보는 *** 로 가렸어요) ---" % len(lines),
         ]
@@ -1574,6 +1601,16 @@ class Widget:
         if time.time() < until:
             self.root.after(300, lambda: self.dje_watch(until))
 
+
+    def on_browser(self):
+        kind = self.browser_var.get()
+        before = browser_now()
+        K.save_state(browser=kind)
+        name = "엣지" if kind == "edge" else "크롬"
+        if kind == before:
+            self.say("지금도 %s로 열고 있어요" % name, "#5c5c5c")
+        else:
+            self.say("✅ 이제 %s로 열어요 — 다음 단추부터 (처음 한 번은 다시 로그인)" % name, "#00754A")
 
     def toggle_notify(self):
         self.notify_on = self.notify_var.get()

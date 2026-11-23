@@ -14,7 +14,7 @@ sys.path.insert(0, str(HERE))
 sys.path.insert(0, str(HERE / "widget"))
 
 LINK = '#keduBox a[href*="link=sanctnWait"]'
-BLANK = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
+BLANK = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/", "edge://newtab/")
 
 
 def load_engine():

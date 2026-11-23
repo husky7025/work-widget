@@ -35,7 +35,7 @@ def main():
         browser = W.connect_sync(p, W.SITES[site]["port"])
         ctx = browser.contexts[0]
         # 업무포털 탭을 쓴다. 없으면 빈 탭, 그것도 없으면 새 탭 (같은 크롬에 있는 나이스 탭은 건드리지 않는다)
-        blank = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")
+        blank = ("about:blank", "chrome://newtab/", "chrome://new-tab-page/", "edge://newtab/")
         page = (next((pg for pg in ctx.pages if any(k in pg.url for k in W.SITES[site]["match"])), None)
                 or next((pg for pg in ctx.pages if pg.url in blank), None)
                 or ctx.new_page())

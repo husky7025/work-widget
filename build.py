@@ -96,6 +96,42 @@ PW_CHECK_NEW = '''    saved_pw = False
     root.after(60, _pw_poll)
 '''
 
+BROWSER_PICK = '''BASE = teacher_config.CONFIG_DIR
+BROWSERS = {
+    "chrome": ("크롬", ("Google", "Chrome", "Application", "chrome.exe")),
+    "edge": ("엣지", ("Microsoft", "Edge", "Application", "msedge.exe")),
+}
+
+
+def browser_path(kind):
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            p = Path(base).joinpath(*BROWSERS[kind][1])
+            if p.exists():
+                return str(p)
+    return None
+
+
+def _pick_browser():
+    """위젯 메뉴 «브라우저»에서 고른 값. 처음엔 크롬. 고른 게 안 깔려 있으면 다른 하나를 쓴다."""
+    try:
+        want = json.loads((BASE / "widget_state.json").read_text(encoding="utf-8")).get("browser")
+    except Exception:
+        want = None
+    want = want if want in BROWSERS else "chrome"
+    if browser_path(want):
+        return want
+    other = "edge" if want == "chrome" else "chrome"
+    return other if browser_path(other) else want
+
+
+BROWSER = _pick_browser()
+BROWSER_NAME = BROWSERS[BROWSER][0]
+# 엣지는 프로필을 따로 둔다 (크롬 프로필을 엣지가 열면 서로 꼬인다). 앞부분 chrome_profile 은 그대로 —
+# 설치·업데이트는 이 이름의 폴더를 건너뛰고, 지우기는 이 이름으로 위젯용 창을 찾아 끈다
+_PROF = "" if BROWSER == "chrome" else "_edge"
+'''
+
 PATCHES = {
     # 설정에 지역이 아직 없을 때 쓰는 기본 나이스 주소 — 서울(sen) 대신 대전(dje)
     "teacher_config.py": [
@@ -196,8 +232,82 @@ def build(*args, **kwargs):
 '''),
         ('''    "--test-type", "--noerrdialogs", "--no-first-run", "--no-default-browser-check",
 ''', '''    "--test-type", "--noerrdialogs", "--no-first-run", "--no-default-browser-check",
-    "--window-name=업무용 크롬 (위젯)",
+    "--window-name=업무용 %s (위젯)" % BROWSER_NAME,
+    # 엣지는 새 프로필 첫 실행 때 «동기화할까요?» 탭을 띄운다 → 위젯 프로필은 동기화하지 않는다 (2026-11-24 실측: 이 값이면 안 뜸)
+    *(["--disable-sync"] if BROWSER == "edge" else []),
 '''),
+        # 크롬·엣지 고르기 — 위젯 메뉴 «브라우저»에서 고른 값(widget_state.json 의 browser)을 쓴다. 고른 게 없으면 다른 하나로.
+        # 엣지도 크롬과 같은 크로미움이라 원격 조종(CDP)·로그인 코드가 그대로 돈다. 포트는 같고 프로필만 따로 둔다
+        ('''BASE = teacher_config.CONFIG_DIR
+SITES = {
+    "neis": {"port": int(os.environ.get("WIDGET_NEIS_PORT", "9322")), "profile": BASE / "chrome_profile_widget_neis",
+             "match": ("neis",)},
+    "edufine": {"port": int(os.environ.get("WIDGET_EDUFINE_PORT", "9324")), "profile": BASE / "chrome_profile_widget_edufine",
+''', BROWSER_PICK + '''SITES = {
+    "neis": {"port": int(os.environ.get("WIDGET_NEIS_PORT", "9322")), "profile": BASE / ("chrome_profile_widget_neis" + _PROF),
+             "match": ("neis",)},
+    "edufine": {"port": int(os.environ.get("WIDGET_EDUFINE_PORT", "9324")), "profile": BASE / ("chrome_profile_widget_edufine" + _PROF),
+'''),
+        ('''def chrome_exe():
+    for base in (os.environ.get("PROGRAMFILES"), os.environ.get("PROGRAMFILES(X86)"), os.environ.get("LOCALAPPDATA")):
+        if base:
+            p = Path(base) / "Google" / "Chrome" / "Application" / "chrome.exe"
+            if p.exists():
+                return str(p)
+    raise RuntimeError("구글 크롬(chrome.exe)을 못 찾았어요 — 크롬을 설치해 주세요")
+''', '''def chrome_exe():
+    p = browser_path(BROWSER)
+    if p:
+        return p
+    raise RuntimeError("크롬도 엣지도 못 찾았어요 — 둘 중 하나를 설치해 주세요")
+
+
+def same_kind(ver):
+    """디버깅 포트에 떠 있는 브라우저가 지금 고른 것과 같은가 (엣지는 /json/version 의 Browser 가 «Edg/…»)."""
+    return ("Edg/" in (ver or "")) == (BROWSER == "edge")
+
+
+def stop_on_port(port):
+    """메뉴에서 브라우저를 바꿨을 때 — 같은 포트에 떠 있는 예전 위젯 브라우저를 끈다 (위젯 전용 프로필 창만. 평소 브라우저는 포트가 없다)."""
+    try:
+        import psutil
+        pids = {c.pid for c in psutil.net_connections(kind="tcp")
+                if c.status == "LISTEN" and c.laddr.port == port and c.pid}
+        for pid in pids:
+            psutil.Process(pid).terminate()
+    except Exception:
+        pass
+    for _ in range(20):
+        if not alive(port):
+            return True
+        time.sleep(0.5)
+    return False
+'''),
+        ('''    cfg = SITES[site]
+    if alive(cfg["port"]):
+        return False
+    if profile_locked(cfg["profile"]):
+        raise RuntimeError("위젯용 크롬이 이상한 상태예요 — 그 창을 닫고 다시 눌러 주세요")
+    step("크롬 띄우는 중")
+    if not launch(site, minimized):
+        raise RuntimeError("크롬이 안 떴어요")
+''', '''    cfg = SITES[site]
+    ver = alive(cfg["port"])
+    if ver and same_kind(ver):
+        return False
+    if ver:
+        step("예전 브라우저 닫는 중")
+        if not stop_on_port(cfg["port"]):
+            raise RuntimeError("예전 위젯용 브라우저 창을 닫지 못했어요 — 그 창을 직접 닫고 다시 눌러 주세요")
+    if profile_locked(cfg["profile"]):
+        raise RuntimeError("위젯용 %s 창이 이상한 상태예요 — 그 창을 닫고 다시 눌러 주세요" % BROWSER_NAME)
+    step("%s 띄우는 중" % BROWSER_NAME)
+    if not launch(site, minimized):
+        raise RuntimeError("%s 창이 안 떴어요" % BROWSER_NAME)
+'''),
+        # 앞으로 꺼낼 창 찾기 — 엣지 창 제목은 «… - Microsoft Edge»
+        ('if title and buf.value.startswith(title) and "Chrome" in buf.value:',
+         'if title and buf.value.startswith(title) and ("Chrome" in buf.value or "Edge" in buf.value):'),
     ],
 }
 

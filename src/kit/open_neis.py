@@ -47,7 +47,7 @@ async def run():
         except Exception:
             pass
         # 빈 탭이 있으면 쓰고, 없으면 새 탭 (업무포털 탭은 건드리지 않는다)
-        page = next((pg for pg in ctx.pages if pg.url in ("about:blank", "chrome://newtab/", "chrome://new-tab-page/")), None) \
+        page = next((pg for pg in ctx.pages if pg.url in ("about:blank", "chrome://newtab/", "chrome://new-tab-page/", "edge://newtab/")), None) \
             or await ctx.new_page()
         await page.add_init_script("Object.defineProperty(navigator,'webdriver',{get:()=>undefined})")
         await N.login(page, {**cfg, "cert_name": cfg["cert_name"]}, pw)
