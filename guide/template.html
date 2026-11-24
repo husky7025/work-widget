@@ -71,7 +71,7 @@ th{background:#f9fafb}
 </style></head><body><div class="wrap">
 
 <h1>🧩 업무위젯 사용설명서 <span class="by">만든 사람 · 대전동산고 J.S.</span></h1>
-<p class="lead">단추 한 번이면 <b>인증서 로그인부터 업무 화면까지</b> 알아서 열어 줍니다.<br>화면을 열어 주기만 하고, 결재·저장·상신은 선생님이 직접 합니다.</p>
+<p class="lead">단추 한 번이면 <b>인증서 로그인부터 업무 화면까지</b> 알아서 열어 줍니다.<br>화면을 열고 복무·출장·초과근무 신청 칸을 채워 주기만 하고, 결재·저장·상신(승인요청)은 선생님이 직접 합니다.</p>
 
 <div class="card hero">
   <img src="{{img:widget_marked}}" alt="업무위젯 화면">
@@ -79,7 +79,7 @@ th{background:#f9fafb}
     <li><span class="num">1</span><div><b>날짜·시계</b> <span>오늘 날짜와 지금 시각</span></div></li>
     <li><span class="num">2</span><div><b>기관접수</b> <span>교데통 기관접수대기 건수 · 누르면 그 화면</span></div></li>
     <li><span class="num">3</span><div><b>업무포털</b> <span>로그인해서 메인 화면까지</span></div></li>
-    <li><span class="num">4</span><div><b>나이스 ▾</b> <span>펼쳐서 복무 화면으로 바로</span></div></li>
+    <li><span class="num">4</span><div><b>나이스 ▾</b> <span>펼쳐서 복무·출장·초과근무 신청, 복무 화면으로 바로</span></div></li>
     <li><span class="num">5</span><div><b>에듀파인 ▾</b> <span>펼쳐서 내부기안·품의로 바로</span></div></li>
     <li><span class="num">6</span><div><b>DJE Talk</b> <span>메신저 자동 로그인 (대전 밖은 «내부기안»)</span></div></li>
     <li><span class="num">7</span><div><b>업무전용 ▾</b> <span>내가 넣은 프로그램·사이트·폴더</span></div></li>
@@ -95,6 +95,17 @@ th{background:#f9fafb}
   <div class="shot"><img src="{{img:sub_mine}}" alt="업무전용 펼침"><p><b>업무전용 ▾</b><br>내가 넣은 것들</p></div>
 </div>
 <p style="text-align:center;color:#4b5563;font-size:15.5px;margin:12px 0 0">펼친 칸을 고르면 그 화면이 열리고 저절로 접혀요. 다시 누르거나 10초 지나도 접혀요.</p>
+
+<h2>복무·출장·초과근무 신청 <span class="tag">칸만 채워 줘요</span></h2>
+<div class="card">
+  <p style="margin:0 0 8px">나이스 ▾를 펼치면 <b style="color:#c25a12">주황색 ✎ 칸은 «신청»</b>(나이스 칸을 채워 줌), <b style="color:#006241">초록 칸은 «화면 열기»</b>예요. 채우기가 끝나면 <b>알림 창</b>이 떠요.</p>
+  <ol>
+    <li><b>«2. 나이스 ▾» → «복무 신청» / «출장 신청» / «초과근무 신청»</b>을 누르세요.</li>
+    <li>종류·날짜·시각과 사유(출장지·목적, 할 일)를 적고 <b>[나이스에 채우기]</b>를 누르세요. 시각은 <code>1300</code>처럼 적어도 돼요.</li>
+    <li>나이스 신청 창에 칸이 채워져 있어요. <b>일수·시간 합이 맞는지 보고, 결재선을 고른 뒤 [승인요청]은 직접</b> 누르세요.</li>
+  </ol>
+  <p style="margin:6px 0 0;font-size:15px;color:#4b5563">위젯은 칸만 채우고 승인요청(상신)은 누르지 않아요.<br>· 복무: 병원 진료면 «병조퇴·병외출·병지각» · <b>끝 날짜를 다른 날로 고르면 매일 같은 시각</b>(나이스 «일반복», 주말은 나이스가 뺌)<br>· 출장: 같은 시도교육청 안이면 관내, 밖이면 관외 · 하루 안의 몇 시간짜리는 «0일 ○시간»으로 맞춰 넣어요<br>· 초과근무: <b>달력에서 여러 날을 고르면 한 번에</b> (나이스 [행추가]로 날마다 한 줄) · 토·일은 «휴일»에 저절로 체크 (공휴일은 «고른 날 모두 휴일») · 휴일 초과근무는 <b>전날 18시 전</b>에 올려야 사전신청으로 인정돼요</p>
+</div>
 
 <h2>업무전용 칸 채우기 <span class="tag">1분</span></h2>
 <div class="flow">
@@ -125,7 +136,7 @@ th{background:#f9fafb}
 <div class="tips">
   <div class="tip"><div class="ic">🟢</div><h3>초록 크롬 = 업무용</h3><p>위젯은 창 위쪽이 초록색인 <b>업무용 크롬</b>을 따로 띄워요. 업무는 여기서, 일반 인터넷은 평소 크롬에서.</p></div>
   <div class="tip y"><div class="ic">✋</div><h3>로그인 중엔 손 떼기</h3><p>크롬이 혼자 로그인하는 동안 창을 만지면 중간에 멈춰요. 잠깐만 기다려 주세요.</p></div>
-  <div class="tip r"><div class="ic">🔒</div><h3>화면만 열어 줘요</h3><p>결재·상신·저장은 하지 않아요. 인증서 암호는 <b>이 PC에만</b> 저장되고 밖으로 보내지 않아요.</p></div>
+  <div class="tip r"><div class="ic">🔒</div><h3>화면을 열고 칸만 채워 줘요</h3><p>승인요청·결재·저장은 하지 않아요. 인증서 암호는 <b>이 PC에만</b> 저장되고 밖으로 보내지 않아요.</p></div>
 </div>
 
 <h2>막히면</h2>
@@ -156,7 +167,7 @@ th{background:#f9fafb}
 <li>풀린 폴더에서 <b><code>install_widget.cmd</code></b>를 <b>더블클릭</b>합니다.
 <ul><li>«게시자를 확인하지 못했습니다» 창 → <b>[실행]</b></li><li>파란 «Windows의 PC 보호» 창 → <b>추가 정보</b> → <b>[실행]</b></li></ul></li>
 <li>«업무 위젯을 설치하고 있어요» 창이 뜹니다. <b>닫지 말고 기다리세요.</b> 멈춘 것처럼 보여도 정상이에요.</li>
-<li>마지막에 <b>설정 창</b>이 뜹니다. 지역을 고르고, 인증서 이름을 확인하고(자동으로 채워져요), <b>인증서 암호</b>를 입력합니다 (<b>글자가 안 보이는 게 정상</b>). 출근·퇴근 시각을 넣고 <b>[저장하고 위젯 켜기]</b>.</li>
+<li>마지막에 <b>설정 창</b>이 뜹니다. 지역을 고르고, 인증서 이름을 확인하고(자동으로 채워져요), <b>인증서 암호</b>를 입력합니다 (<b>글자가 안 보이는 게 정상</b>). 연락처는 넣어도 되고 비워도 돼요. <b>[저장하고 위젯 켜기]</b>.</li>
 </ol>
 <div class="ok">위젯이 뜨면 끝! 바탕화면에 «업무위젯»이 생겨요. 다음부터는 그걸 더블클릭하세요.</div>
 <div class="bad">클로드 앱 안에서 설치하지 마세요. 탐색기에서 더블클릭해서 설치해야 설정이 제대로 저장돼요.</div>

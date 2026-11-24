@@ -11,6 +11,7 @@
   품의등록 — 에듀파인 학교회계 > 사업담당 > 품의/정산 > 품의등록 빈 화면
   «▾» 단추(나이스·에듀파인·업무전용)는 누르면 칸 한 줄을 아래로(화면 아래가 모자라면 위로) 펼친다 — SUBMENUS 참고.
   펼친 칸의 하위 메뉴는 work_widget_menu.py 가 연다 (나이스: 메뉴 글자를 차례로 누름 / 에듀파인: 메뉴ID 로 gfnOpenMenu).
+  나이스 ▾ «복무·출장·초과근무 신청» — 작은 창에서 고른 값으로 나이스 신청 창의 칸만 채운다 (fill_bokmu.py · fill_trip.py · fill_ot.py). 승인요청은 선생님이 직접 누른다.
 모두 신청·저장·결재·상신은 하지 않는다. 인증서 암호는 이 파일이 다루지 않는다 (키트가 자격 증명 관리자에서 읽는다).
 """
 import contextlib
@@ -122,6 +123,8 @@ ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
           "dje": ("#2b5148", "#d4e9e2", "#eef6f2"), "edu": ("#1E3932", "#d4e9e2", "#eef6f2"),
           "mine": ("#7a5a12", "#f3e6c4", "#fbf5e6")}      # (강조색, 아이콘 배경, 눌렀을 때 타일 바탕)
+FILL_TONE = ("#c25a12", "#f0b47e", "#fff1e3")     # 나이스에 «신청» 칸을 채우는 펼침 칸 (주황) — 화면만 여는 초록 칸과 구분 (강조색, 테두리, 바탕)
+FILL_INK = "#7a3608"                              # 그 칸의 글자색
 
 JOBS = {
     "portal": ("open_portal.py", "업무포털 메인 화면을 열었습니다", "✅ 업무포털 메인 화면을 열었습니다"),
@@ -140,7 +143,10 @@ BUTTON_MINE = ("mine", "⭐", "5. 업무전용")         # 선생님이 직접 �
 SUBMENUS = {
     "neis": [("나이스\n첫 화면", "나이스", "neis"),
              ("개인근무\n상황관리", "개인근무상황관리", ("neis", [["복무", 0], ["개인근무상황관리", 1]])),
-             ("개인초과\n근무관리", "개인초과근무관리", ("neis", [["복무", 0], ["개인초과근무관리", 1]]))],
+             ("개인초과\n근무관리", "개인초과근무관리", ("neis", [["복무", 0], ["개인초과근무관리", 1]])),
+             ("복무\n신청", "복무 신청", "bokmu"),          # 여기부터 «신청» 칸 (주황 ✎) — 화면 여는 칸 뒤에 모아 둔다
+             ("출장\n신청", "출장 신청", "trip"),
+             ("초과근무\n신청", "초과근무 신청", "ot")],
     "edu": [("내부기안", "내부기안", "gian"),
             ("품의등록", "품의등록", "pumui"),
             ("기안한\n문서", "기안한문서", ("edufine", "A00AAB0106001")),
@@ -153,10 +159,43 @@ SUB_COLS = 6
 CREDIT = "만든 사람 · 대전동산고 J.S."           # 제목에 마우스를 올렸을 때만 보인다
 SUB_MAX = 12                     # 펼침 칸은 두 줄(12칸)까지
 SUB_IDLE_S = 10                  # 펼친 채 마우스가 위젯 밖에 이만큼 있으면 저절로 접는다
-SUB_BUILTIN = {"neis": [("나이스 첫 화면", "neis")], "edu": [("내부기안", "gian"), ("품의등록", "pumui")], "mine": []}   # 메뉴를 안 읽어도 고를 수 있는 것
+SUB_BUILTIN = {"neis": [("나이스 첫 화면", "neis"), ("복무 신청", "bokmu"), ("출장 신청", "trip"), ("초과근무 신청", "ot")], "edu": [("내부기안", "gian"), ("품의등록", "pumui")], "mine": []}   # 메뉴를 안 읽어도 고를 수 있는 것
 GUIDE_FILE = "사용설명서.html"                 # 위젯 폴더에 같이 들어가는 사용설명서 (build.py 가 안내서.html 을 넣는다)
 GUIDE_URL = "https://github.com/husky7025/work-widget/blob/main/%EC%95%88%EB%82%B4%EC%84%9C.md"   # 파일이 없을 때 (안내서.md)
 MENUS_FILE_NAME = "work_widget_menus.json"   # work_widget_menu.py read 가 적는 «내 메뉴» 목록 (키트 폴더)
+
+
+FILL_JOBS = {"bokmu": "bokmu_form", "trip": "trip_form", "ot": "ot_form"}   # 펼침 칸 → 나이스 칸 채우기 입력 창 (승인요청은 선생님이 직접)
+FILL_CELLS = [("bokmu", "복무 신청", "복무\n신청"), ("trip", "출장 신청", "출장\n신청"), ("ot", "초과근무 신청", "초과근무\n신청")]
+
+
+def is_fill_job(job):
+    """펼침 칸의 할 일이 «칸 채우기 입력 창»인가 — 할 일은 글자이거나 [사이트, 경로] 목록이라 목록은 사전 열쇠로 못 쓴다"""
+    return isinstance(job, str) and job in FILL_JOBS
+
+
+def ot_days_text(days):
+    """초과근무로 고른 날 → «11-25(수) · 11-26(목) · 11-28(토·휴일)  — 3일» (다섯 날마다 줄을 바꾼다)"""
+    from datetime import date
+    out = []
+    for d in sorted(days):
+        wd = date.fromisoformat(d).weekday()
+        out.append("%s(%s%s)" % (d[5:], "월화수목금토일"[wd], "·휴일" if wd >= 5 else ""))
+    lines = [" · ".join(out[i:i + 5]) for i in range(0, len(out), 5)]
+    return "\n".join(lines) + ("  — %d일" % len(out) if len(out) > 1 else "")
+
+
+def norm_hm(t):
+    """13:00 · 1300 · 13 · 930 · 13시 · 13시30분 · 13.30 → «13:00» 꼴 (못 읽으면 None)"""
+    t = re.sub(r"\s+", "", str(t)).replace("시", ":").replace("분", "").replace(".", ":").rstrip(":")
+    if re.fullmatch(r"\d{3,4}", t):
+        t = t[:-2] + ":" + t[-2:]
+    elif re.fullmatch(r"\d{1,2}", t):
+        t += ":00"
+    m = re.fullmatch(r"(\d{1,2}):(\d{1,2})", t)
+    if not m or int(m.group(1)) > 23 or int(m.group(2)) > 59:
+        return None
+    return "%02d:%02d" % (int(m.group(1)), int(m.group(2)))
 
 
 def sub_defaults():
@@ -198,7 +237,7 @@ def sub_text(name):
 
 def sub_job_ok(job):
     if isinstance(job, str):
-        return job in ("neis", "gian", "pumui")
+        return job in ("neis", "gian", "pumui") or job in FILL_JOBS
     if not (isinstance(job, (list, tuple)) and len(job) == 2):
         return False
     site, target = job
@@ -637,6 +676,17 @@ class Widget:
         self.sub_up = False          # 위로 펼쳤나 (그만큼 위젯을 위로 올렸다)
         self.base_h = SIZE_H
         self.submenus = sub_load(st)
+        added = st.get("fill_added") if isinstance(st.get("fill_added"), list) else (["bokmu"] if st.get("bokmu_added") else [])
+        if len(added) < len(FILL_CELLS):         # v0.11: 펼침 칸을 이미 저장해 둔 선생님에게도 «복무·출장·초과근무 신청» 칸을 한 번씩 넣어 준다
+            nl = self.submenus.setdefault("neis", [])
+            for job, name, text in FILL_CELLS:
+                if job in added:
+                    continue
+                added.append(job)
+                if any(x.get("job") == job for x in nl) or len(nl) >= SUB_MAX:
+                    continue
+                nl.append({"name": name, "text": text, "job": job})     # 선생님이 둔 «화면 열기» 칸들 뒤에 모아 붙인다
+            K.save_state(submenus=self.submenus, fill_added=added)
         self.sub_idle = 0
         self.picker = None
         buttons = BUTTONS if is_daejeon() else [b if b[0] != "dje" else BUTTON_NOT_DJE for b in BUTTONS]
@@ -820,17 +870,21 @@ class Widget:
         for i, it in enumerate(items):
             name, job = it["name"], it["job"]
             text = it.get("text") or sub_text(name)
+            fill = is_fill_job(job)                # 신청(칸 채우기) 칸은 주황 + ✎ — 화면만 여는 초록 칸과 한눈에 구분
+            acc, badge, tint = FILL_TONE if fill else ACCENT[kind]
             c = tk.Canvas(f, width=TILE, height=TILE, bg=PANEL, highlightthickness=0, cursor="hand2")
             c.grid(row=i // SUB_COLS, column=i % SUB_COLS, padx=GAP // 2, pady=GAP // 2)
-            round_rect(c, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=tint, outline=badge, width=1, tags="edge")
+            round_rect(c, px(2), px(2), TILE - px(2), TILE - px(2), px(12), fill=tint, outline=badge, width=2 if fill else 1, tags="edge")
             c.create_rectangle(px(16), px(7), TILE - px(16), px(10), fill=acc, outline="")
-            c.create_text(TILE // 2, TILE // 2 + px(3), text=text, fill=WHITE, font=fit_font(text, TILE - px(8)), justify="center")
+            if fill:
+                c.create_text(TILE - px(10), px(11), text="✎", fill=acc, font=F(8, True))
+            c.create_text(TILE // 2, TILE // 2 + px(3), text=text, fill=FILL_INK if fill else WHITE, font=fit_font(text, TILE - px(8)), justify="center")
             c.bind("<Button-1>", lambda e, j=job, n=name: self.click_sub(j, n))
             c.bind("<Enter>", lambda e, w=c, a=acc: w.itemconfigure("edge", outline=a, fill=TILE_BG))
             c.bind("<Leave>", lambda e, w=c, t=tint, b=badge: w.itemconfigure("edge", outline=b, fill=t))
         self.sub_frame = f
         self.sub_open = kind
-        self.sub_tiles[kind].itemconfigure("edge", outline=acc, fill=tint)
+        self.sub_tiles[kind].itemconfigure("edge", outline=ACCENT[kind][0], fill=ACCENT[kind][2])
         self.sub_tiles[kind].coords("chev", *self.chev_pts(True))
         self.set_height(self.base_h + self.sub_extra, y - self.sub_extra if self.sub_up else None)
         self.sub_idle = 0
@@ -872,6 +926,9 @@ class Widget:
 
     def click_sub(self, job, name):
         self.close_sub()
+        if is_fill_job(job):                      # 복무·출장·초과근무 신청 — 작은 창에서 고르고, 나이스 칸만 채운다
+            getattr(self, FILL_JOBS[job])()
+            return
         if isinstance(job, str):                  # 원래 단추 하나와 같은 일 (나이스 첫 화면 · 내부기안 · 품의등록)
             self.click(job)
             return
@@ -882,6 +939,473 @@ class Widget:
         arg = json.dumps(target, ensure_ascii=False) if site == "neis" else target
         self.click(("work_widget_menu.py", ("open-" + site, arg, name),
                     "✅  열었습니다", "✅ %s 화면을 열었습니다 (신청·저장·결재는 안 함)" % name))
+
+    # ── 복무 신청 (조퇴·외출·지각·병가·육아시간) — 나이스 근무상황신청 칸만 채운다. 승인요청은 선생님이 직접 ──
+    def bokmu_form(self):
+        made = self.fill_window("bokmu_win", "복무 신청", "고르고 [나이스에 채우기]를 누르면 나이스 근무상황신청 창에 칸을 채워 둡니다.\n"
+                                                         "결재선을 확인하고 [승인요청]은 나이스에서 직접 눌러 주세요.")
+        if not made:
+            return
+        top, g, lab, entry = made
+        from datetime import timedelta
+        c = K.cfg() or {}
+        work_start, work_end = self.work_times()
+        now = K.round5(datetime.now().strftime("%H:%M"))
+        types = list(getattr(K, "BOKMU_TYPES", ["조퇴", "외출", "지각", "병조퇴", "병외출", "병지각"]))
+        if "육아시간" not in types and (KIT / "main_bokmu.py").exists() and "육아시간" in (KIT / "main_bokmu.py").read_text(encoding="utf-8", errors="replace"):
+            types.append("육아시간")
+        kind = tk.StringVar(value="조퇴")
+        v_date = tk.StringVar(value=datetime.now().strftime("%Y-%m-%d"))
+        v_end_date = tk.StringVar(value=v_date.get())
+        v_start, v_end = tk.StringVar(value=now), tk.StringVar(value=work_end)
+        v_reason = tk.StringVar(value="개인용무")
+        v_contact = tk.StringVar(value=c.get("contact", ""))
+        v_child = tk.StringVar(value=c.get("child", ""))
+        lab(0, "종류")
+        kf = tk.Frame(g, bg=PANEL)
+        kf.grid(row=0, column=1, sticky="w", padx=(px(10), 0))
+        for i, k in enumerate(types):
+            tk.Radiobutton(kf, text=k, variable=kind, value=k, bg=PANEL, activebackground=PANEL, font=F(9),
+                           width=6, anchor="w").grid(row=i // 4, column=i % 4, sticky="w")
+        lab(1, "날짜")
+        dwrap = tk.Frame(g, bg=PANEL)
+        dwrap.grid(row=1, column=1, sticky="w", padx=(px(10), 0), pady=px(3))
+        df = tk.Frame(dwrap, bg=PANEL)
+        df.pack(anchor="w")
+        end_btn = None
+
+        def start_picked(iso):                     # 시작을 고르면 끝 날짜도 같은 날로 (하루짜리가 대부분)
+            v_end_date.set(iso)
+            end_btn.refresh()
+            multi_note()
+
+        def multi_note(*_):
+            many = v_end_date.get() > v_date.get()
+            rep.config(text="↻ 매일 같은 시각 (나이스 «일반복» · 주말은 나이스가 뺌)" if many else "끝 날짜를 다른 날로 고르면 매일 같은 시각으로 «일반복»")
+            rep.config(fg=FILL_TONE[0] if many else "#8a8a8a")
+        self.date_button(df, v_date, start_picked).pack(side="left", anchor="n")
+        tk.Label(df, text=" ~ ", bg=PANEL, font=F(9)).pack(side="left", anchor="n")
+        end_btn = self.date_button(df, v_end_date, multi_note)
+        end_btn.pack(side="left", anchor="n")
+        lab(2, "시각")
+        self.time_row(g, 2, v_start, v_end)
+        rep = tk.Label(dwrap, text="", bg=PANEL, font=F(8))      # 날짜 바로 밑 — 여러 날이면 «일반복» 안내
+        rep.pack(anchor="w", pady=(px(2), 0))
+        multi_note()
+        lab(3, "사유")
+        e_reason = entry(3, v_reason, 30)
+        lab(4, "연락처")
+        entry(4, v_contact, 16)
+        lab(5, "자녀")
+        e_child = entry(5, v_child, 12)
+        tk.Label(g, text="자녀 = 육아시간일 때만 (자녀가 한 명이면 비워 둬도 돼요)\n병원 진료면 병조퇴·병외출·병지각을 고르세요",
+                 bg=PANEL, fg="#8a8a8a", font=F(8), justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(px(2), 0))
+
+        def on_kind(*_):
+            k = kind.get()
+            e_child.config(state="normal" if k == "육아시간" else "disabled")
+            t = datetime.now()
+            if k in ("조퇴", "병조퇴"):
+                v_start.set(K.round5(t.strftime("%H:%M")))
+                v_end.set(work_end)
+            elif k == "육아시간":                  # 보통 퇴근 전 2시간 (하루 최대 2시간)
+                v_start.set((datetime.strptime(work_end, "%H:%M") - timedelta(hours=2)).strftime("%H:%M"))
+                v_end.set(work_end)
+            elif k in ("외출", "병외출"):
+                v_start.set(K.round5(t.strftime("%H:%M")))
+                v_end.set(K.round5((t + timedelta(hours=1)).strftime("%H:%M")))
+            else:                                  # 지각 / 병지각
+                v_start.set(work_start)
+                v_end.set(K.round5(t.strftime("%H:%M")))
+        kind.trace_add("write", on_kind)
+        on_kind()
+        self.fill_buttons(top, lambda: self.bokmu_fill(top, kind.get(), v_date.get().strip(), v_start.get().strip(), v_end.get().strip(),
+                                                       v_reason.get().strip(), v_contact.get().strip(), v_child.get().strip(),
+                                                       v_end_date.get().strip()))
+        e_reason.focus_set()
+        e_reason.select_range(0, "end")
+
+    def fill_bad(self, top, msg):
+        """입력 창의 틀린 곳 — 창 안(빨간 글씨)과 위젯 상태 줄에 함께 보여 준다."""
+        if getattr(top, "err", None) is not None:
+            top.err.config(text="⚠️ " + msg)
+        self.say("⚠️ " + msg, "#c82014")
+        top.bell()
+
+    def fill_window(self, attr, title, intro):
+        """나이스 칸 채우기 입력 창 (복무·출장·초과근무 공통) — (top, g, lab, entry). 이미 떠 있으면 None."""
+        old = getattr(self, attr, None)
+        if old is not None and old.winfo_exists():
+            old.deiconify()
+            old.lift()
+            return None
+        top = tk.Toplevel(self.root)
+        setattr(self, attr, top)
+        top.title(title)
+        top.configure(bg=PANEL)
+        top.attributes("-topmost", True)
+        top.resizable(False, False)
+        try:
+            top.iconbitmap(str(HERE0 / "업무위젯.ico"))
+        except Exception:
+            pass
+        tk.Label(top, text=intro, bg=PANEL, fg="#5c5c5c", font=F(9), justify="left").pack(anchor="w", padx=px(14), pady=(px(12), px(6)))
+        g = tk.Frame(top, bg=PANEL)
+        g.pack(padx=px(14), anchor="w")
+
+        def lab(r, text):
+            tk.Label(g, text=text, bg=PANEL, fg=WHITE, font=F(9, True)).grid(row=r, column=0, sticky="nw", pady=px(3))
+
+        def entry(r, var, width):
+            e = tk.Entry(g, textvariable=var, font=F(9), width=width)
+            e.grid(row=r, column=1, sticky="w", padx=(px(10), 0), pady=px(3))
+            return e
+        return top, g, lab, entry
+
+    def date_button(self, parent, var, on_pick=None):
+        """누르면 작은 달력이 펼쳐지는 날짜 단추 (날짜는 치지 않고 고른다)."""
+        f = tk.Frame(parent, bg=PANEL)
+        b = tk.Button(f, text=K.date_label(var.get()), font=F(9), relief="groove", bg=TILE_BG, cursor="hand2", anchor="w")
+        b.pack(anchor="w")
+        cal = {"box": None}
+
+        def picked(iso):
+            b.config(text=K.date_label(iso))
+            toggle()
+            if on_pick:
+                on_pick(iso)
+
+        def toggle(*_):
+            if cal["box"]:
+                cal["box"].destroy()
+                cal["box"] = None
+            else:
+                cal["box"] = K.date_picker(f, var, PANEL, picked)
+                cal["box"].pack(anchor="w", pady=(px(4), px(2)))
+        b.config(command=toggle)
+        f.refresh = lambda: b.config(text=K.date_label(var.get()))
+        return f
+
+    def time_row(self, g, r, v_start, v_end, note="  (5분 단위)"):
+        tf = tk.Frame(g, bg=PANEL)
+        tf.grid(row=r, column=1, sticky="w", padx=(px(10), 0), pady=px(3))
+        tk.Entry(tf, textvariable=v_start, font=F(9), width=6).pack(side="left")
+        tk.Label(tf, text=" ~ ", bg=PANEL, font=F(9)).pack(side="left")
+        tk.Entry(tf, textvariable=v_end, font=F(9), width=6).pack(side="left")
+        tk.Label(tf, text=note, bg=PANEL, fg="#8a8a8a", font=F(8)).pack(side="left")
+
+    def fill_buttons(self, top, command):
+        top.err = tk.Label(top, text="", bg=PANEL, fg="#c82014", font=F(9, True))   # 틀린 곳은 이 창 안에 보여 준다
+        top.err.pack(anchor="w", padx=px(14), pady=(px(6), 0))
+        bf = tk.Frame(top, bg=PANEL)
+        bf.pack(pady=(px(4), px(12)))
+        tk.Button(bf, text="나이스에 채우기", font=F(9, True), bg=GREEN, fg="white", relief="flat", padx=px(14), cursor="hand2",
+                  command=command).pack(side="left", padx=px(4))
+        tk.Button(bf, text="닫기", font=F(9), relief="groove", bg=TILE_BG, padx=px(10), command=top.destroy).pack(side="left", padx=px(4))
+        top.update_idletasks()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        sw, sh = top.winfo_screenwidth(), top.winfo_screenheight()
+        x = min(max(0, self.root.winfo_x() + self.root.winfo_width() // 2 - w // 2), sw - w)
+        y = self.root.winfo_y() + self.root.winfo_height() + px(6)
+        if y + h > sh - px(60):
+            y = max(0, self.root.winfo_y() - h - px(6))
+        top.geometry("+%d+%d" % (x, y))
+
+    def fill_ready(self, top, d, start, end, step5=True):
+        """날짜·시각 검사 → (start, end) 또는 None (틀린 곳은 창에 보여 준다)."""
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            return self.fill_bad(top, "날짜를 달력에서 골라 주세요")
+        start, end = norm_hm(start), norm_hm(end)
+        if not start or not end:
+            return self.fill_bad(top, "시각은 13:00 처럼 적어 주세요 (1300 도 돼요)")
+        if step5:
+            start, end = K.round5(start), K.round5(end)
+        if self.busy or self.sanctn_busy or self.jeopsu_busy:
+            return self.fill_bad(top, "다른 작업이 끝난 뒤 다시 눌러 주세요")
+        return start, end
+
+    @staticmethod
+    def work_times():
+        """(출근, 퇴근) 처음 값 — 신청 창에서 마지막에 쓴 시각(work_times) → 예전 설정의 출근·퇴근 → 08:00 / 16:00.
+        v0.11 부터 설정 창에서 묻지 않고, 지각 시작·조퇴 끝 시각을 쓸 때마다 기억한다."""
+        st = K.load_state()
+        c = K.cfg() or {}
+        saved = st.get("work_times") if isinstance(st.get("work_times"), dict) else {}
+        out = []
+        for key, d in (("start", c.get("work_start") or "08:00"), ("end", c.get("work_end") or "16:00")):
+            v = norm_hm(saved.get(key) or "") or norm_hm(d) or ("08:00" if key == "start" else "16:00")
+            out.append(v)
+        return tuple(out)
+
+    def remember_work_time(self, key, value):
+        st = K.load_state()
+        wt = dict(st.get("work_times")) if isinstance(st.get("work_times"), dict) else {}
+        if wt.get(key) != value:
+            wt[key] = value
+            K.save_state(work_times=wt)
+
+    def remember_contact(self, contact, child=""):
+        c = K.cfg() or {}
+        if (contact and c.get("contact") != contact) or (child and c.get("child") != child):   # 다음부터 기본값으로
+            try:
+                c.update({k: v for k, v in (("contact", contact), ("child", child)) if v})
+                K.CONFIG.write_text(json.dumps(c, ensure_ascii=False, indent=2), encoding="utf-8")
+            except Exception:
+                pass
+
+    # ── 출장 신청 — 나이스 출장신청 창의 칸만 채운다 ──
+    def trip_form(self):
+        made = self.fill_window("trip_win", "출장 신청", "고르고 [나이스에 채우기]를 누르면 나이스 출장신청 창에 칸을 채워 둡니다.\n"
+                                                        "일수·결재선을 확인하고 [승인요청]은 나이스에서 직접 눌러 주세요.")
+        if not made:
+            return
+        top, g, lab, entry = made
+        st = K.load_state()
+        last = st.get("trip_last") if isinstance(st.get("trip_last"), dict) else {}
+        c = K.cfg() or {}
+        work_end = self.work_times()[1]
+        kinds = ["국내출장(관내)", "국내출장(관외)", "출장(연수)", "국외출장"]
+        kind = tk.StringVar(value=last.get("kind") if last.get("kind") in kinds else kinds[0])
+        today = datetime.now().strftime("%Y-%m-%d")
+        v_date, v_end_date = tk.StringVar(value=today), tk.StringVar(value=today)
+        v_start = tk.StringVar(value=norm_hm(last.get("start") or "") or "13:00")     # 지난번 출장 시각
+        v_end = tk.StringVar(value=norm_hm(last.get("end") or "") or work_end)
+        v_place = tk.StringVar(value=last.get("place", ""))
+        v_purpose = tk.StringVar(value=last.get("purpose", ""))
+        v_contact = tk.StringVar(value=c.get("contact", ""))
+        lab(0, "종류")
+        kf = tk.Frame(g, bg=PANEL)
+        kf.grid(row=0, column=1, sticky="w", padx=(px(10), 0))
+        for i, k in enumerate(kinds):
+            tk.Radiobutton(kf, text=k, variable=kind, value=k, bg=PANEL, activebackground=PANEL, font=F(9),
+                           anchor="w").grid(row=i // 2, column=i % 2, sticky="w", padx=(0, px(8)))
+        lab(1, "날짜")
+        df = tk.Frame(g, bg=PANEL)
+        df.grid(row=1, column=1, sticky="w", padx=(px(10), 0), pady=px(3))
+        end_btn = None
+
+        def start_picked(iso):                     # 시작을 고르면 끝 날짜도 같은 날로 (하루짜리가 대부분)
+            if v_end_date.get() < iso:
+                v_end_date.set(iso)
+                end_btn.refresh()
+        self.date_button(df, v_date, start_picked).pack(side="left", anchor="n")
+        tk.Label(df, text=" ~ ", bg=PANEL, font=F(9)).pack(side="left", anchor="n")
+        end_btn = self.date_button(df, v_end_date)
+        end_btn.pack(side="left", anchor="n")
+        lab(2, "시각")
+        self.time_row(g, 2, v_start, v_end)
+        lab(3, "출장지")
+        e_place = entry(3, v_place, 30)
+        lab(4, "출장목적")
+        entry(4, v_purpose, 30)
+        lab(5, "연락처")
+        entry(5, v_contact, 16)
+        tk.Label(g, text="같은 시도교육청 안이면 관내, 밖이면 관외 · 연수 출장은 학교 관행에 따라 «출장(연수)»\n"
+                         "하루 안의 몇 시간짜리는 «0일 ○시간»으로 맞춰 넣어요 (나이스가 «1일»로 셈하는 것을 고침)",
+                 bg=PANEL, fg="#8a8a8a", font=F(8), justify="left").grid(row=6, column=0, columnspan=2, sticky="w", pady=(px(2), 0))
+        self.fill_buttons(top, lambda: self.trip_fill(top, kind.get(), v_date.get(), v_end_date.get(), v_start.get(), v_end.get(),
+                                                      v_place.get().strip(), v_purpose.get().strip(), v_contact.get().strip()))
+        e_place.focus_set()
+
+    def trip_fill(self, top, kind, d, d2, start, end, place, purpose, contact):
+        ok = self.fill_ready(top, d, start, end)
+        if not ok:
+            return
+        start, end = ok
+        if d2 < d:
+            return self.fill_bad(top, "끝 날짜가 시작보다 빨라요")
+        if d2 == d and end <= start:
+            return self.fill_bad(top, "끝나는 시각이 시작보다 늦어야 해요")
+        if not place or not purpose:
+            return self.fill_bad(top, "출장지와 출장목적을 적어 주세요")
+        if contact and not re.fullmatch(r"[\d()\- ]{9,16}", contact):
+            return self.fill_bad(top, "연락처는 010-1234-5678 처럼 적어 주세요")
+        self.remember_contact(contact)
+        K.save_state(trip_last={"kind": kind, "place": place, "purpose": purpose, "start": start, "end": end})
+        args = ["--kind", kind, "--date", d, "--end-date", d2, "--start", start, "--end", end, "--place", place, "--purpose", purpose]
+        if contact:
+            args += ["--contact", contact]
+        top.destroy()
+        self.click(("fill_trip.py", tuple(args), "출장신청 칸을 채웠습니다",
+                    "✅ 출장 %s %s~%s 칸을 채웠어요 — 일수 확인 뒤 [승인요청]은 직접" % (d[5:], start, end)))
+
+    # ── 초과근무 신청 — 나이스 초과근무신청 창의 칸만 채운다 ──
+    def ot_form(self):
+        made = self.fill_window("ot_win", "초과근무 신청", "고르고 [나이스에 채우기]를 누르면 나이스 초과근무신청 창에 칸을 채워 둡니다.\n"
+                                                         "시간 합을 확인하고 [승인요청]은 나이스에서 직접 눌러 주세요.")
+        if not made:
+            return
+        top, g, lab, entry = made
+        st = K.load_state()
+        c = K.cfg() or {}
+        kinds = ["시간외 근무", "야간 근무"]       # 종별 «휴일 근무»는 휴일근무가 제도화된 공무원만 — 주말 근무는 «시간외 근무 + 휴일»
+        kind = tk.StringVar(value="시간외 근무")
+        days = {datetime.now().strftime("%Y-%m-%d")}     # 고른 날들 — 날마다 나이스에 한 줄 ([행추가])
+        ot_t = st.get("ot_times") if isinstance(st.get("ot_times"), dict) else {}   # 지난번 초과근무 시각 (없으면 퇴근 ~ 21:00)
+        v_start = tk.StringVar(value=norm_hm(ot_t.get("start") or "") or self.work_times()[1])
+        v_end = tk.StringVar(value=norm_hm(ot_t.get("end") or "") or "21:00")
+        v_task = tk.StringVar(value=st.get("ot_task", ""))
+        v_holiday = tk.BooleanVar(value=False)
+        lab(0, "종별")
+        kf = tk.Frame(g, bg=PANEL)
+        kf.grid(row=0, column=1, sticky="w", padx=(px(10), 0))
+        for i, k in enumerate(kinds):
+            tk.Radiobutton(kf, text=k, variable=kind, value=k, bg=PANEL, activebackground=PANEL, font=F(9),
+                           anchor="w").grid(row=0, column=i, sticky="w", padx=(0, px(8)))
+        lab(1, "날짜")
+        df = tk.Frame(g, bg=PANEL)
+        df.grid(row=1, column=1, sticky="w", padx=(px(10), 0), pady=px(3))
+        shown = tk.Label(df, bg=PANEL, fg=WHITE, font=F(9, True), justify="left", anchor="w")
+
+        def refresh():
+            shown.config(text=ot_days_text(days))
+        refresh()
+        cal = {"box": None}
+
+        def toggle():
+            if cal["box"]:
+                cal["box"].destroy()
+                cal["box"] = None
+                pick_btn.config(text="📅 날짜 고르기 (여러 날 가능)")
+            else:
+                cal["box"] = self.multi_date_picker(df, days, refresh)
+                cal["box"].pack(anchor="w", pady=(px(4), px(2)), after=pick_btn)     # 단추 바로 밑에 펼친다
+                pick_btn.config(text="✔ 다 골랐어요 (달력 접기)")
+        pick_btn = tk.Button(df, text="📅 날짜 고르기 (여러 날 가능)", font=F(9), relief="groove", bg=TILE_BG, cursor="hand2", command=toggle)
+        pick_btn.pack(anchor="w")
+        shown.pack(anchor="w", pady=(px(3), 0))
+        tk.Checkbutton(df, text="고른 날 모두 휴일 (공휴일·방학 중 휴일 등 — 토·일은 저절로 휴일)", variable=v_holiday,
+                       bg=PANEL, activebackground=PANEL, font=F(8)).pack(anchor="w")
+        lab(2, "시각")
+        self.time_row(g, 2, v_start, v_end, "")
+        lab(3, "할 일")
+        e_task = entry(3, v_task, 30)
+        tk.Label(g, text="«초과근무시간 합»은 나이스가 셈해요 (평일은 1시간 빠질 수 있어요)\n"
+                         "휴일 초과근무는 전날 18시 전에 올려야 사전신청으로 인정돼요",
+                 bg=PANEL, fg="#8a8a8a", font=F(8), justify="left").grid(row=4, column=0, columnspan=2, sticky="w", pady=(px(2), 0))
+        self.fill_buttons(top, lambda: self.ot_fill(top, kind.get(), sorted(days), v_start.get(), v_end.get(),
+                                                    v_task.get().strip(), v_holiday.get()))
+        e_task.focus_set()
+
+    def multi_date_picker(self, parent, days, on_change):
+        """여러 날을 고르는 작은 달력 — 누르면 고르고, 다시 누르면 뺀다 (days 집합을 바로 고친다)."""
+        import calendar
+        from datetime import date
+        f, fb = F(8), F(9, True)
+        first = min(days) if days else date.today().isoformat()
+        d0 = date.fromisoformat(first)
+        shown = [d0.year, d0.month]
+        box = tk.Frame(parent, bg=PANEL)
+        head = tk.Frame(box, bg=PANEL)
+        head.pack(fill="x")
+        title = tk.Label(head, bg=PANEL, font=fb)
+        grid = tk.Frame(box, bg=PANEL)
+        grid.pack()
+
+        def move(step):
+            y, m = shown[0], shown[1] + step
+            if m < 1:
+                y, m = y - 1, 12
+            elif m > 12:
+                y, m = y + 1, 1
+            shown[:] = [y, m]
+            draw()
+
+        def flip(iso):
+            if iso in days:
+                if len(days) > 1:                  # 적어도 하루는 남긴다
+                    days.discard(iso)
+            elif len(days) < 31:
+                days.add(iso)
+            draw()
+            on_change()
+
+        def draw():
+            for w in grid.winfo_children():
+                w.destroy()
+            y, m = shown
+            title.config(text="%d년 %d월" % (y, m))
+            for i, dn in enumerate("일월화수목금토"):
+                tk.Label(grid, text=dn, bg=PANEL, font=f, width=3,
+                         fg="#c0392b" if i == 0 else "#1b6fb5" if i == 6 else "#8a7a68").grid(row=0, column=i)
+            today = date.today().isoformat()
+            for r, week in enumerate(calendar.Calendar(firstweekday=6).monthdayscalendar(y, m), start=1):
+                for c, dd in enumerate(week):
+                    if not dd:
+                        continue
+                    iso = "%04d-%02d-%02d" % (y, m, dd)
+                    on = iso in days
+                    tk.Button(grid, text=str(dd), width=3, relief="flat", bd=0, font=f, cursor="hand2",
+                              bg=FILL_TONE[0] if on else FILL_TONE[2] if iso == today else "white",
+                              fg="white" if on else "#c0392b" if c == 0 else "#1b6fb5" if c == 6 else "#3b2f25",
+                              activebackground=FILL_TONE[1], command=lambda iso=iso: flip(iso)).grid(row=r, column=c, padx=1, pady=1)
+        tk.Button(head, text="◀", relief="flat", bd=0, bg=PANEL, font=f, cursor="hand2", command=lambda: move(-1)).pack(side="left", padx=4)
+        tk.Button(head, text="▶", relief="flat", bd=0, bg=PANEL, font=f, cursor="hand2", command=lambda: move(1)).pack(side="right", padx=4)
+        title.pack(side="left", expand=True)
+        draw()
+        return box
+
+    def ot_fill(self, top, kind, days, start, end, task, all_holiday):
+        from datetime import date
+        days = sorted(d for d in days if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d))
+        if not days:
+            return self.fill_bad(top, "날짜를 달력에서 골라 주세요")
+        ok = self.fill_ready(top, days[0], start, end, step5=False)
+        if not ok:
+            return
+        start, end = ok
+        if end <= start:
+            return self.fill_bad(top, "끝나는 시각이 시작보다 늦어야 해요")
+        if not task:
+            return self.fill_bad(top, "하여야 할 일을 적어 주세요")
+        K.save_state(ot_task=task, ot_times={"start": start, "end": end})
+        weekend = [d for d in days if date.fromisoformat(d).weekday() >= 5]     # 토·일은 저절로 «휴일» 체크
+        args = ["--kind", kind, "--date", ",".join(days), "--start", start, "--end", end, "--task", task]
+        if all_holiday:
+            args += ["--holiday"]
+        elif weekend:
+            args += ["--holiday-dates", ",".join(weekend)]
+        top.destroy()
+        what = days[0][5:] + (" 외 %d일" % (len(days) - 1) if len(days) > 1 else "")
+        self.click(("fill_ot.py", tuple(args), "초과근무신청 칸을 채웠습니다",
+                    "✅ 초과근무 %s %s~%s 칸을 채웠어요 — 시간 합 확인 뒤 [승인요청]은 직접" % (what, start, end)))
+
+    def bokmu_fill(self, top, kind, d, start, end, reason, contact, child, d2=""):
+        def bad(msg):
+            self.fill_bad(top, msg)
+        if not re.fullmatch(r"\d{4}-\d{2}-\d{2}", d):
+            return bad("날짜를 달력에서 골라 주세요")
+        d2 = d2 if re.fullmatch(r"\d{4}-\d{2}-\d{2}", d2 or "") else d
+        if d2 < d:
+            return bad("끝 날짜가 시작보다 빨라요")
+        start, end = norm_hm(start), norm_hm(end)
+        if not start or not end:
+            return bad("시각은 13:00 처럼 적어 주세요 (1300 도 돼요)")
+        start, end = K.round5(start), K.round5(end)
+        if end <= start:
+            return bad("끝나는 시각이 시작보다 늦어야 해요")
+        if not reason:
+            return bad("사유를 적어 주세요")
+        if contact and not re.fullmatch(r"[\d()\- ]{9,16}", contact):
+            return bad("연락처는 010-1234-5678 처럼 적어 주세요")
+        if self.busy or self.sanctn_busy or self.jeopsu_busy:
+            return bad("다른 작업이 끝난 뒤 다시 눌러 주세요")
+        self.remember_contact(contact, child)
+        if kind in ("조퇴", "병조퇴", "육아시간"):          # 조퇴 끝 = 퇴근 시각 → 다음 조퇴·육아시간·출장·초과근무의 처음 값
+            self.remember_work_time("end", end)
+        elif kind in ("지각", "병지각"):                     # 지각 시작 = 출근 시각
+            self.remember_work_time("start", start)
+        args = ["--type", kind, "--date", d, "--start", start, "--end", end, "--reason", reason]
+        if d2 != d:                                          # 여러 날 — 매일 같은 시각 (나이스 «일반복»)
+            args += ["--end-date", d2]
+        if contact:
+            args += ["--contact", contact]
+        if kind == "육아시간" and child:
+            args += ["--child", child]
+        top.destroy()
+        days = d[5:] + ("~" + d2[5:] + " 매일" if d2 != d else "")
+        self.click(("fill_bokmu.py", tuple(args), "근무상황신청 칸을 채웠습니다",
+                    "✅ %s %s %s~%s 칸을 채웠어요 — 나이스에서 확인하고 [승인요청]은 직접" % (kind, days, start, end)))
 
     def open_mine(self, target, name):
         """«내 프로그램» 칸 — 탐색기에서 두 번 누른 것처럼 윈도우에게 열어 달라고 한다 (웹 주소는 기본 브라우저)."""
@@ -1321,6 +1845,7 @@ class Widget:
     def run_job(self, script, done, done_msg, is_dje=False, args=()):
         t0 = time.time()
         last = ""
+        summary = ""                 # 채우기 스크립트가 끝 줄에 알려 준 값 (예: 신청시간 0일 2시간 0분)
         ok = False
         timer = None
         try:
@@ -1340,6 +1865,8 @@ class Widget:
                         self.root.after(0, self.show_jeopsu, int(line[7:].strip()), "", False)
                     if done in line:
                         ok = True
+                        m = re.search(r"\(([^()]*)\)\s*$", line)       # 채우기 스크립트 끝 줄의 «(신청시간 0일 2시간 0분)»
+                        summary = m.group(1) if m else ""
                         msg = "✅ 이미 로그인되어 있습니다" if (is_dje and "이미 로그인" in line) else done_msg
                         self.root.after(0, self.say, msg, "#00754A")
                     elif line.startswith(("⏸", "❌")):
@@ -1363,6 +1890,55 @@ class Widget:
             K.log_line("업무위젯 %s %.1fs %s" % (" ".join([script, *args[:1]]), time.time() - t0, "ok" if ok else "FAIL " + last))
             if ok and script == "open_sanctn.py":       # 결재대기함을 연 김에 숫자도 새로 읽는다 (조용히)
                 self.root.after(4000, self.refresh_sanctn)
+            if script.startswith("fill_"):              # 나이스 칸 채우기는 끝나면 팝업으로 알린다 (나이스 창에 가려 상태 줄을 못 보므로)
+                self.root.after(0, self.fill_popup, ok, done_msg, summary, last)
+
+    def fill_popup(self, ok, done_msg, summary, err):
+        """칸 채우기 결과 알림 — 모든 창 위, 화면 가운데. [확인]을 누를 때까지 떠 있다."""
+        old = getattr(self, "fill_pop", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        top = tk.Toplevel(self.root)
+        self.fill_pop = top
+        top.title("업무위젯 — 나이스 칸 채우기")
+        top.configure(bg=PANEL)
+        top.attributes("-topmost", True)
+        top.resizable(False, False)
+        try:
+            top.iconbitmap(str(HERE0 / "업무위젯.ico"))
+        except Exception:
+            pass
+        acc = FILL_TONE[0] if ok else "#c82014"
+        tk.Frame(top, bg=acc, height=px(6)).pack(fill="x")
+        body = tk.Frame(top, bg=PANEL)
+        body.pack(padx=px(22), pady=(px(14), px(6)))
+        head = "✎  나이스에 칸을 다 채웠어요" if ok else "⚠️  칸을 다 채우지 못했어요"
+        tk.Label(body, text=head, bg=PANEL, fg=acc, font=F(13, True)).pack(anchor="w")
+        what = re.sub(r"^✅\s*", "", done_msg).split(" — ")[0]
+        if not ok:
+            what = re.sub(r"\s*칸을 채웠어요.*$", "", what)      # «출장 12-01 15:00~17:00» 만
+        lines = [what] + ([summary] if ok and summary else [])
+        tk.Label(body, text="\n".join(lines), bg=PANEL, fg=WHITE, font=F(10, True), justify="left").pack(anchor="w", pady=(px(8), 0))
+        if ok:
+            steps = ("나이스 창에서 이렇게 마무리해 주세요\n"
+                     "  ① 날짜·시간·일수(시간 합)가 맞는지 보기\n"
+                     "  ② 결재선 고르기\n"
+                     "  ③ [승인요청]은 직접 누르기  (위젯은 누르지 않았어요)")
+        else:
+            steps = ("멈춘 까닭: %s\n\n나이스 창에 채워진 데까지 남아 있으면 거기서 마저 채우거나, 창을 닫고 다시 해 보세요."
+                     % (err or "알 수 없음 — ⚙ → 도움말 → 문제 해결용 기록 복사"))
+        tk.Label(body, text=steps, bg=PANEL, fg="#4b4b4b", font=F(9), justify="left", wraplength=px(380)).pack(anchor="w", pady=(px(10), 0))
+        b = tk.Button(top, text="확인", font=F(10, True), bg=acc, fg="white", relief="flat", padx=px(24), cursor="hand2", command=top.destroy)
+        b.pack(pady=(px(6), px(16)))
+        top.bind("<Return>", lambda e: top.destroy())
+        top.bind("<Escape>", lambda e: top.destroy())
+        top.update_idletasks()
+        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
+        top.geometry("+%d+%d" % ((top.winfo_screenwidth() - w) // 2, (top.winfo_screenheight() - h) // 3))
+        top.lift()
+        top.focus_force()
+        b.focus_set()
+        top.bell()
 
     # ── 에듀파인 결재대기 건수 (check_sanctn.py 가 업무포털 메인 숫자만 읽는다 · 30분마다 + 칸을 누르면 바로) ──
     def refresh_sanctn(self, manual=False):

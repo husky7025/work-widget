@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 KIT_REPO = "workcalmkite-hue/neis-automation-kit"
-KIT_SHA = "4815f63c672e0ce424e6c5af1b5df926a77164d6"   # 2026-11-12 main — 이 버전으로 시험함
+KIT_SHA = "6aa5cc679809e616d9512b65c09b3a30198c46f2"   # 2026-11-23 main (육아시간) — 바탕화면 키트 clone 에서 git archive 로 vendor/ 에 넣음
 
 HERE = Path(__file__).resolve().parent
 SRC = HERE / "src"
@@ -142,6 +142,29 @@ PATCHES = {
         (PW_OLD, PW_NEW),
         ('old.get("work_start", "08:40")', 'old.get("work_start", "08:00")'),
         ('old.get("work_end", "16:20")', 'old.get("work_end", "16:00")'),
+        # 출근·퇴근 시각은 설정 창에서 묻지 않는다 (v0.11) — 위젯의 복무·출장·초과근무 신청 창이 마지막에 쓴 시각을 기억한다.
+        # 이미 저장된 값은 그대로 다시 저장해 처음 값으로 쓰고, 이상한 값이면 08:00 / 16:00 으로 둔다 (저장이 막히지 않게)
+        ('''    label(r, "④ 출근 시각", "지각 신청할 때 시작 시각 기본값 (학교마다 달라요)")
+    ws = tk.Entry(root, width=10, font=FONT, relief="solid", bd=1)
+    ws.insert(0, old.get("work_start", "08:00"))
+    ws.grid(row=r, column=1, sticky="w", **pad)
+
+    r += 2
+    label(r, "⑤ 퇴근 시각", "조퇴 신청할 때 끝 시각 기본값")
+    we = tk.Entry(root, width=10, font=FONT, relief="solid", bd=1)
+    we.insert(0, old.get("work_end", "16:00"))
+    we.grid(row=r, column=1, sticky="w", **pad)
+
+    r += 2
+    label(r, "⑥ 연락처 (선택)", "복무 신청서에 적히는 번호. 비워 둬도 돼요")''',
+         '''    class _Kept:                       # 업무위젯: 출근·퇴근 칸은 없앴다 — 저장돼 있던 값을 그대로 넘긴다
+        def __init__(self, v, d):
+            self.v = v if re.fullmatch(r"\\d{1,2}:\\d{2}", str(v or "")) else d
+
+        def get(self):
+            return self.v
+    ws, we = _Kept(old.get("work_start"), "08:00"), _Kept(old.get("work_end"), "16:00")
+    label(r, "④ 연락처 (선택)", "복무·출장 신청서에 적히는 번호. 비워 둬도 돼요")'''),
         ('08:40 처럼 적어 주세요', '08:00 처럼 적어 주세요'),
         # 처음 설치할 때 지역 칸에 미리 «대전»이 골라져 있게 한다 (이미 저장된 지역이 있으면 그 값이 먼저 쓰인다)
         ('            return name\n    return "서울"\n', '            return name\n    return "대전"\n'),
