@@ -25,9 +25,45 @@ FIND_JS = r"""() => {
 }"""
 
 
+class Fail(Exception):
+    """숫자를 못 읽은 이유 (지어내지 않고 이유만 알린다)."""
+
+
 def fail(msg):
     print("❌  " + msg, flush=True)
     sys.exit(1)
+
+
+def chrome_up():
+    try:
+        urllib.request.urlopen("http://127.0.0.1:%d/json/version" % PORT, timeout=3).read()
+        return True
+    except Exception:
+        return False
+
+
+def read(browser):
+    """이미 연결한 위젯 크롬에서 결재대기 숫자를 읽는다 → {"wait": N, "urgent": M}. 못 읽으면 Fail."""
+    page = next((pg for ctx in browser.contexts for pg in ctx.pages if MAIN_RE.search(pg.url)), None)
+    if page is None:
+        raise Fail("업무포털 메인 탭이 없습니다 — 업무포털 버튼으로 로그인하세요")
+    page.set_default_timeout(20_000)
+    try:
+        page.reload(wait_until="domcontentloaded")
+    except Exception:
+        raise Fail("업무포털 새로고침에 실패했습니다")
+    if not MAIN_RE.search(page.url):
+        raise Fail("업무포털 로그인이 풀렸습니다 — 업무포털 버튼으로 로그인하세요")
+    text = None
+    for _ in range(40):                      # 최대 약 20초: 에듀파인 숫자는 화면이 뜬 뒤에 채워진다
+        text = page.evaluate(FIND_JS)
+        if text:
+            break
+        page.wait_for_timeout(500)
+    if not text:
+        raise Fail("결재대기 숫자를 찾지 못했습니다 (에듀파인 연결이 안 됐을 수 있습니다)")
+    m = COUNT_RE.match(text)
+    return {"wait": int(m.group(1)), "urgent": int(m.group(2))}
 
 
 def main():
@@ -35,33 +71,16 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     except Exception:
         pass
-    try:
-        urllib.request.urlopen("http://127.0.0.1:%d/json/version" % PORT, timeout=3).read()
-    except Exception:
+    if not chrome_up():
         fail("위젯 크롬이 꺼져 있습니다 — 업무포털 버튼으로 로그인하세요")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp("http://127.0.0.1:%d" % PORT)
-        page = next((pg for ctx in browser.contexts for pg in ctx.pages if MAIN_RE.search(pg.url)), None)
-        if page is None:
-            fail("업무포털 메인 탭이 없습니다 — 업무포털 버튼으로 로그인하세요")
-        page.set_default_timeout(20_000)
         try:
-            page.reload(wait_until="domcontentloaded")
-        except Exception:
-            fail("업무포털 새로고침에 실패했습니다")
-        if not MAIN_RE.search(page.url):
-            fail("업무포털 로그인이 풀렸습니다 — 업무포털 버튼으로 로그인하세요")
-        text = None
-        for _ in range(40):                      # 최대 약 20초: 에듀파인 숫자는 화면이 뜬 뒤에 채워진다
-            text = page.evaluate(FIND_JS)
-            if text:
-                break
-            page.wait_for_timeout(500)
-        if not text:
-            fail("결재대기 숫자를 찾지 못했습니다 (에듀파인 연결이 안 됐을 수 있습니다)")
-    m = COUNT_RE.match(text)
-    print("SANCTN " + json.dumps({"wait": int(m.group(1)), "urgent": int(m.group(2))}), flush=True)
+            v = read(browser)
+        except Fail as e:
+            fail(str(e))
+    print("SANCTN " + json.dumps(v), flush=True)
 
 
 if __name__ == "__main__":

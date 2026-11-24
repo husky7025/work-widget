@@ -37,9 +37,56 @@ def stable_count(page, tries=40):
     return None
 
 
+class Fail(Exception):
+    """숫자를 못 읽은 이유 (지어내지 않고 이유만 알린다)."""
+
+
 def fail(msg):
     print("❌  " + msg, flush=True)
     sys.exit(1)
+
+
+def chrome_up():
+    try:
+        urllib.request.urlopen("http://127.0.0.1:%d/json/version" % PORT, timeout=3).read()
+        return True
+    except Exception:
+        return False
+
+
+def read(browser):
+    """이미 연결한 위젯 크롬에서 기관접수대기 숫자를 읽는다 → {"wait": N}. 못 읽으면 Fail."""
+    pages = [pg for ctx in browser.contexts for pg in ctx.pages]
+    page = next((pg for pg in pages if re.search(r"edmgr\.kr/taskPotlMain", pg.url)), None) \
+        or next((pg for pg in pages if "edmgr.kr" in pg.url), None)
+    portal = next((pg for pg in pages if "bpm_man_mn00_001" in pg.url), None)
+    if page is not None:
+        page.set_default_timeout(20_000)
+        try:
+            page.reload(wait_until="domcontentloaded")
+        except Exception:
+            raise Fail("통합관리 화면 새로고침에 실패했습니다")
+    elif portal is not None:
+        m = re.match(r"https://([a-z]+)\.eduptl\.kr", portal.url)
+        if not m:
+            raise Fail("업무포털 주소에서 지역을 알아내지 못했습니다")
+        # 뒤쪽 탭으로 연다 (background=True — 선생님이 보던 탭·창을 빼앗지 않는다)
+        url = "https://%s.edmgr.kr/taskPotl?edmgrUrl=%s" % (m.group(1), SCREEN)
+        ctx = portal.context
+        with ctx.expect_page(timeout=20_000) as info:
+            browser.new_browser_cdp_session().send("Target.createTarget", {"url": url, "background": True})
+        page = info.value
+        page.set_default_timeout(20_000)
+        try:
+            page.wait_for_load_state("domcontentloaded")
+        except Exception:
+            pass
+    else:
+        raise Fail("업무포털이 열려 있지 않습니다 — 업무포털 버튼으로 로그인하세요")
+    n = stable_count(page)
+    if n is None:
+        raise Fail("기관접수대기 숫자를 찾지 못했습니다 (통합관리 로그인이 풀렸을 수 있습니다)")
+    return {"wait": int(n)}
 
 
 def main():
@@ -47,44 +94,16 @@ def main():
         sys.stdout.reconfigure(encoding="utf-8", line_buffering=True)
     except Exception:
         pass
-    try:
-        urllib.request.urlopen("http://127.0.0.1:%d/json/version" % PORT, timeout=3).read()
-    except Exception:
+    if not chrome_up():
         fail("위젯 크롬이 꺼져 있습니다 — 업무포털 버튼으로 로그인하세요")
     from playwright.sync_api import sync_playwright
     with sync_playwright() as p:
         browser = p.chromium.connect_over_cdp("http://127.0.0.1:%d" % PORT)
-        pages = [pg for ctx in browser.contexts for pg in ctx.pages]
-        page = next((pg for pg in pages if re.search(r"edmgr\.kr/taskPotlMain", pg.url)), None) \
-            or next((pg for pg in pages if "edmgr.kr" in pg.url), None)
-        portal = next((pg for pg in pages if "bpm_man_mn00_001" in pg.url), None)
-        if page is not None:
-            page.set_default_timeout(20_000)
-            try:
-                page.reload(wait_until="domcontentloaded")
-            except Exception:
-                fail("통합관리 화면 새로고침에 실패했습니다")
-        elif portal is not None:
-            m = re.match(r"https://([a-z]+)\.eduptl\.kr", portal.url)
-            if not m:
-                fail("업무포털 주소에서 지역을 알아내지 못했습니다")
-            # 뒤쪽 탭으로 연다 (background=True — 선생님이 보던 탭·창을 빼앗지 않는다)
-            url = "https://%s.edmgr.kr/taskPotl?edmgrUrl=%s" % (m.group(1), SCREEN)
-            ctx = portal.context
-            with ctx.expect_page(timeout=20_000) as info:
-                browser.new_browser_cdp_session().send("Target.createTarget", {"url": url, "background": True})
-            page = info.value
-            page.set_default_timeout(20_000)
-            try:
-                page.wait_for_load_state("domcontentloaded")
-            except Exception:
-                pass
-        else:
-            fail("업무포털이 열려 있지 않습니다 — 업무포털 버튼으로 로그인하세요")
-        n = stable_count(page)
-        if n is None:
-            fail("기관접수대기 숫자를 찾지 못했습니다 (통합관리 로그인이 풀렸을 수 있습니다)")
-    print("JEOPSU " + json.dumps({"wait": int(n)}), flush=True)
+        try:
+            v = read(browser)
+        except Fail as e:
+            fail(str(e))
+    print("JEOPSU " + json.dumps(v), flush=True)
 
 
 if __name__ == "__main__":
