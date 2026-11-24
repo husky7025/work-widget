@@ -119,6 +119,10 @@ def fit_font(text, max_w, size=8, bold=True, smallest=6):
 
 
 KEY = "#010203"        # 이 색은 투명하게 빠진다 (둥근 모서리용)
+# 자동 접기 — 정해 둔 시간 동안 위젯을 안 쓰면 작은 둥근 단추로 접히고, 단추를 누르면 펼쳐진다 (투명도로 서서히)
+FOLD_CHOICES = (0, 1, 3, 5, 10, 30)    # 분 (0 = 끔, 처음 값)
+BUB = px(46)                           # 접힌 단추 지름
+FADE_OUT_MS, FADE_IN_MS, FADE_STEP_MS = 150, 200, 20
 ACCENT = {"portal": ("#00754A", "#d4e9e2", "#eef6f2"), "neis": ("#006241", "#d4e9e2", "#eef6f2"),
           "gian": ("#1E3932", "#d4e9e2", "#eef6f2"), "pumui": ("#2b5148", "#d4e9e2", "#eef6f2"),
           "dje": ("#2b5148", "#d4e9e2", "#eef6f2"), "edu": ("#1E3932", "#d4e9e2", "#eef6f2"),
@@ -679,7 +683,7 @@ class Widget:
         self.ev_show = k.CreateEventW(None, False, False, K.SHOW_EVENT)      # 바로가기를 또 누르면 «앞으로 나와»
         self.ev_ack = k.CreateEventW(None, False, False, K.ACK_EVENT)
 
-        # 위쪽 줄: 📍(항상 위) ⚙(환경설정) ✕(닫기)
+        # 위쪽 줄: 📍(항상 위) ⚙(환경설정) –(트레이로 내리기) ✕(작은 단추로 접기)
         bar = tk.Frame(self.root, bg=PANEL)
         bar.pack(fill="x", padx=PAD - px(4), pady=(px(8), 0))
         self.title_lb = tk.Label(bar, text="업무위젯", bg=PANEL, fg="#6b6b6b", font=F(9, True))
@@ -687,7 +691,8 @@ class Widget:
         self.tip = None                       # 제목에 마우스를 올리면 만든 사람이 작게 뜬다
         self.title_lb.bind("<Enter>", lambda e: self.show_tip(), add="+")
         self.title_lb.bind("<Leave>", lambda e: self.hide_tip(), add="+")
-        for text, cmd, tip in (("✕", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
+        for text, cmd, tip in (("✕", self.fold, "작은 단추로 접기 (단추를 누르면 다시 펼쳐져요)"),
+                               ("–", self.minimize, "시스템 트레이로 내리기 (완전 종료: 톱니바퀴 → 위젯 완전 종료)"),
                                ("⚙", self.show_options, "환경설정"),
                                ("📍", self.toggle_pin, "항상 위 켜기/끄기")):
             b = tk.Label(bar, text=text, bg=PANEL, fg="#5c5c5c", font=F(10), cursor="hand2", padx=px(5))
@@ -801,6 +806,17 @@ class Widget:
             self.bind_drag(w)
 
         self.mini = None
+        self.folded = False                   # 자동 접기로 작은 단추(self.bubble)가 된 동안 True — 트레이(self.mini)와는 따로
+        try:
+            self.fold_after = max(0.0, float(st.get("fold_after", 0) or 0))      # 분 (0 = 끔)
+        except (TypeError, ValueError):
+            self.fold_after = 0.0
+        self.last_active = time.monotonic()   # 마지막으로 위젯을 쓴(마우스를 올린·누른) 때
+        self.menu_open = False
+        self.bubble = None
+        self.bdrag = None
+        self.fade_ids = {}
+        self.sanctn_badge = None              # 마지막으로 읽은 (결재대기, 긴급) — 접힌 단추에 숫자로 보인다
         self.auto_var = tk.BooleanVar(value=self.autostart_on())
         self.auto_cache = self.auto_var.get()
         self.tray = Tray(HERE0 / "업무위젯.ico", "업무위젯 (누르면 열려요)", lambda: self.auto_cache)
@@ -825,6 +841,16 @@ class Widget:
         for pct, name in SIZE_CHOICES:
             sm.add_radiobutton(label=name, value=pct, variable=self.size_var, command=self.on_size)
         vm.add_cascade(label="위젯 크기", menu=sm)
+        self.fold_var = tk.IntVar(value=int(self.fold_after) if self.fold_after in FOLD_CHOICES else -1)
+        fm = tk.Menu(vm, tearoff=0, font=F(10))
+        for mins in FOLD_CHOICES:
+            fm.add_radiobutton(label="끄기" if mins == 0 else "%d분 동안 안 쓰면" % mins, value=mins,
+                               variable=self.fold_var, command=self.on_fold)
+        fm.add_radiobutton(label=self.fold_custom_label(), value=-1, variable=self.fold_var, command=self.on_fold_custom)
+        self.fold_menu, self.fold_custom_idx = fm, fm.index("end")
+        fm.add_separator()
+        fm.add_command(label="지금 접기", command=lambda: self.root.after(150, self.fold))
+        vm.add_cascade(label="자동 접기 (작은 단추로)", menu=fm)
         self.mine_var = tk.BooleanVar(value=MINE_ON)
         vm.add_checkbutton(label="업무전용 칸 쓰기 (끄면 예전 배치 · 위젯이 다시 켜져요)", variable=self.mine_var, command=self.on_mine)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
@@ -1839,7 +1865,7 @@ class Widget:
 
     def press(self, e):
         try:
-            if str(e.widget.cget("cursor")) == "hand2":      # ✕ ⚙ 📍 · 단추 칸을 누른 것은 끌기가 아니다 (위로 번져 올라온 누름)
+            if str(e.widget.cget("cursor")) == "hand2":      # ✕ – ⚙ 📍 · 단추 칸을 누른 것은 끌기가 아니다 (위로 번져 올라온 누름)
                 return
         except Exception:
             pass
@@ -1868,6 +1894,8 @@ class Widget:
     def on_opacity(self, v):
         self.opacity = min(1.0, max(0.3, float(v) / 100))
         self.root.attributes("-alpha", self.opacity)
+        if self.folded and self.bubble is not None:
+            self.bubble.attributes("-alpha", self.opacity)
         if hasattr(self, "_opa_save"):
             self.root.after_cancel(self._opa_save)
         self._opa_save = self.root.after(400, lambda: K.save_state(opacity=self.opacity))
@@ -2057,12 +2085,16 @@ class Widget:
             else:
                 self.sanctn_look = (TILE_BG, EDGE, 1, False)
             self.paint_sanctn()
+            self.sanctn_badge = (wait, urgent)
+            self.paint_bubble()
             if manual:
                 self.say("✅ 결재대기 %d건 (%s)" % (wait, hm), "#00754A")
             self.notify_sanctn(wait, urgent)
         else:
             self.sanctn_look = (TILE_BG, EDGE, 1, False)           # 못 읽었을 땐 색을 빼서 «0건» 으로 오해하지 않게
             self.paint_sanctn()
+            self.sanctn_badge = None
+            self.paint_bubble()
             self.sanctn_cv.itemconfigure(self.sanctn_num, text="--", fill="#a8a49b")
             self.sanctn_cv.itemconfigure(self.sanctn_lab, text="에듀파인\n결재대기")
             if manual:
@@ -2486,6 +2518,9 @@ class Widget:
     def keep_visible(self, raise_=False):
         if self.mini is not None:
             return
+        if self.folded:                          # 접힌 동안은 본 창을 되살리지 않고 단추만 화면 안에 둔다
+            self.keep_bubble_visible()
+            return
         try:
             self.root.update_idletasks()
             if self.root.state() != "normal":
@@ -2517,6 +2552,24 @@ class Widget:
         """위젯을 숨기고 시스템 트레이(작업표시줄 오른쪽 아래)에 아이콘을 둔다. 아이콘을 누르면 되살아난다."""
         if self.mini is not None:
             return
+        if self.folded:                          # 접힌 단추에서 «닫기»: 단추를 거두고, 되살릴 때 단추 자리에 맞춰 펼쳐지게 둔다
+            if not self.tray.add():
+                return
+            b = self.bubble
+            x, y = K.fit_on_screen(b.winfo_x() + BUB - SIZE_W, b.winfo_y(), SIZE_W, self.root.winfo_height())
+            fid = self.fade_ids.pop(str(b), None)
+            if fid is not None:
+                self.root.after_cancel(fid)
+            b.withdraw()
+            self.folded = False
+            self.root.attributes("-alpha", self.opacity)      # 접을 때 0 으로 내린 투명도를 되돌려 둔다
+            self.root.geometry("+%d+%d" % (x, y))
+            self.mini = True
+            try:
+                K.save_state(x=x, y=y)           # 숨긴 창의 winfo_x 는 바로 안 바뀌므로 계산한 자리를 그대로 적는다
+            except Exception:
+                pass
+            return
         self.close_sub()
         self.save_pos()
         if not self.tray.add():
@@ -2526,11 +2579,213 @@ class Widget:
         self.root.withdraw()
 
     def restore(self):
+        if self.folded:                          # 트레이 아이콘·바로가기를 누르면 접힌 위젯도 펼친다
+            self.unfold()
         if self.mini is None:
             return
         self.mini = None
         self.root.deiconify()
         self.keep_visible(raise_=True)
+
+    # ── 자동 접기: 안 쓰는 동안 작은 둥근 단추로 · 단추를 누르면 펼치기 (둘 다 투명도로 서서히) ──
+    def fold_custom_label(self):
+        m = int(self.fold_after)
+        return ("직접: %d분 동안 안 쓰면 (바꾸기…)" % m) if m and m not in FOLD_CHOICES else "직접 정하기…"
+
+    def on_fold_custom(self):
+        """자동 접기 시간을 분 단위로 직접 적는다 (1~600분). 취소하면 그대로."""
+        from tkinter import simpledialog
+        now = int(self.fold_after)
+        v = simpledialog.askinteger("자동 접기", "몇 분 동안 안 쓰면 접을까요? (1~600)", parent=self.root,
+                                    initialvalue=now if now else 15, minvalue=1, maxvalue=600)
+        if v is None:                                    # 취소 → 원래 고른 칸으로
+            self.fold_var.set(now if now in FOLD_CHOICES else -1)
+            return
+        self.fold_var.set(v if v in FOLD_CHOICES else -1)
+        self.set_fold(v)
+
+    def on_fold(self):
+        self.set_fold(max(0, self.fold_var.get()))
+
+    def set_fold(self, mins):
+        self.fold_after = float(mins)
+        self.fold_menu.entryconfigure(self.fold_custom_idx, label=self.fold_custom_label())
+        K.save_state(fold_after=int(self.fold_after))
+        self.last_active = time.monotonic()
+        self.say("자동 접기를 껐어요" if not self.fold_after else
+                 "%d분 동안 안 쓰면 작은 단추로 접혀요" % self.fold_after, "#5c5c5c")
+
+    def fold_blocked(self):
+        """지금 접으면 안 되는 때 — 쓰는 중으로 본다."""
+        if self.dragging or self.sub_open or self.busy or self.dje_busy or self.menu_open or self.bdrag:
+            return True
+        if self.root.state() != "normal":
+            return True
+        mx, my = self.root.winfo_pointerxy()      # 마우스가 위젯 위에 있으면 쓰는 중
+        x, y = self.root.winfo_x(), self.root.winfo_y()
+        if x <= mx < x + self.root.winfo_width() and y <= my < y + self.root.winfo_height():
+            return True
+        for w in self.root.winfo_children():      # 신청 창·메뉴 고르기·결과 창 같은 작은 창이 떠 있으면 접지 않는다
+            if isinstance(w, tk.Toplevel) and w is not self.bubble and w is not self.tip and w.winfo_ismapped():
+                return True
+        return False
+
+    def fold_watch(self):
+        """poll(0.4초마다)에서 부른다."""
+        if self.folded or self.mini is not None:
+            return
+        now = time.monotonic()
+        if self.fold_after <= 0 or self.fold_blocked():
+            self.last_active = now
+        elif now - self.last_active >= self.fold_after * 60:
+            self.fold()
+
+    def fade(self, win, a0, a1, ms, done=None):
+        """win 의 투명도를 a0 → a1 로 ms 동안 바꾼다. 같은 창에 새 페이드가 오면 앞의 것(과 그 done)은 취소."""
+        key = str(win)
+        old = self.fade_ids.pop(key, None)
+        if old is not None:
+            self.root.after_cancel(old)
+        steps = max(1, ms // FADE_STEP_MS)
+
+        def step(i):
+            t = i / steps
+            t = t * t * (3 - 2 * t)                # 처음·끝을 부드럽게
+            try:
+                win.attributes("-alpha", a0 + (a1 - a0) * t)
+            except tk.TclError:
+                self.fade_ids.pop(key, None)
+                return
+            if i < steps:
+                self.fade_ids[key] = self.root.after(FADE_STEP_MS, step, i + 1)
+            else:
+                self.fade_ids.pop(key, None)
+                if done:
+                    done()
+        step(0)
+
+    def make_bubble(self):
+        b = tk.Toplevel(self.root)
+        b.withdraw()
+        b.overrideredirect(True)
+        b.configure(bg=KEY)
+        b.attributes("-transparentcolor", KEY)
+        c = tk.Canvas(b, width=BUB, height=BUB, bg=KEY, highlightthickness=0, cursor="hand2")
+        c.pack()
+        c.bind("<ButtonPress-1>", self.bub_press)
+        c.bind("<B1-Motion>", self.bub_motion)
+        c.bind("<ButtonRelease-1>", self.bub_release)
+        c.bind("<Button-3>", lambda e: self.bubble_popup(e.x_root, e.y_root))
+        self.bubble, self.bubble_cv = b, c
+        self.bm = tk.Menu(b, tearoff=0, font=F(10))     # 접힌 단추 오른쪽 클릭: 펼치기 / 닫기(트레이) / 종료
+        self.bm.add_command(label="펼치기", command=self.unfold)
+        self.bm.add_command(label="닫기 (트레이로 내리기)", command=self.minimize)
+        self.bm.add_separator()
+        self.bm.add_command(label="종료 (위젯 완전 종료)", command=self.quit_from_menu)
+
+    def bubble_popup(self, x, y):
+        self._pop_t = time.monotonic()
+        try:
+            self.bm.tk_popup(x, y)
+        finally:
+            self.bm.grab_release()
+        self.paint_bubble()
+
+    def paint_bubble(self):
+        """접힌 단추: 결재대기가 있으면 그 수를 (긴급 = 붉게, 일반 = 노랗게), 없으면 «업무»."""
+        if self.bubble is None:
+            return
+        c, s = self.bubble_cv, BUB
+        c.delete("all")
+        c.create_oval(1, 1, s - 2, s - 2, fill=PANEL, outline="#d6d1c6", width=1)
+        wait, urgent = self.sanctn_badge or (0, 0)
+        if wait:
+            fill, edge, color = ("#fde3df", "#c82014", "#c82014") if urgent else ("#fff0c2", "#e0a526", "#b7791f")
+            c.create_oval(px(5), px(5), s - px(6), s - px(6), fill=fill, outline=edge, width=2)
+            c.create_text(s // 2, s // 2, text=str(wait) if wait < 100 else "99+", fill=color, font=F(13 if wait < 100 else 10, True))
+        else:
+            c.create_oval(px(5), px(5), s - px(6), s - px(6), fill="#eef6f2", outline="#a9cdbf", width=1)
+            c.create_text(s // 2, s // 2, text="업무", fill=GREEN, font=F(9, True))
+
+    def keep_bubble_visible(self):
+        try:
+            b = self.bubble
+            if b is None or not b.winfo_exists():
+                return
+            if b.state() != "normal":
+                b.deiconify()
+            x, y = b.winfo_x(), b.winfo_y()
+            nx, ny = K.fit_on_screen(x, y, BUB, BUB)
+            if (nx, ny) != (x, y):
+                b.geometry("+%d+%d" % (nx, ny))
+        except Exception as e:
+            K.log_line("업무위젯 접힌 단추 오류 %r" % e)
+
+    def fold(self):
+        if self.folded or self.mini is not None or self.root.state() != "normal":
+            return
+        self.close_sub()
+        self.hide_tip()
+        self.save_pos()
+        if self.bubble is None or not self.bubble.winfo_exists():
+            self.make_bubble()
+        self.paint_bubble()
+        self.folded = True
+        # 단추는 위젯의 오른쪽 위 모서리 자리에 둔다 (펼칠 때도 이 모서리에 맞춰 펼친다)
+        x, y = K.fit_on_screen(self.root.winfo_x() + self.root.winfo_width() - BUB, self.root.winfo_y(), BUB, BUB)
+
+        def hidden():
+            self.root.withdraw()
+            b = self.bubble
+            b.attributes("-alpha", 0.0)
+            b.attributes("-topmost", self.pinned)
+            b.geometry("+%d+%d" % (x, y))
+            b.deiconify()
+            b.lift()
+            self.fade(b, 0.0, self.opacity, FADE_IN_MS)
+        self.fade(self.root, self.opacity, 0.0, FADE_OUT_MS, hidden)
+
+    def unfold(self):
+        if not self.folded:
+            return
+        self.folded = False
+        self.last_active = time.monotonic()
+        b = self.bubble
+        x, y = K.fit_on_screen(b.winfo_x() + BUB - SIZE_W, b.winfo_y(), SIZE_W, self.root.winfo_height())
+        try:
+            a = float(b.attributes("-alpha"))
+        except Exception:
+            a = self.opacity
+        self.fade(b, a, 0.0, FADE_OUT_MS // 2 + 25, b.withdraw)
+        self.root.attributes("-alpha", 0.0)
+        self.root.geometry("+%d+%d" % (x, y))
+        self.root.deiconify()
+        self.root.lift()
+        self.tick_now()
+        self.fade(self.root, 0.0, self.opacity, FADE_IN_MS, self.save_pos)
+
+    def bub_press(self, e):
+        self.bdrag = (e.x_root, e.y_root, self.bubble.winfo_x(), self.bubble.winfo_y(), False)
+
+    def bub_motion(self, e):
+        if not self.bdrag:
+            return
+        sx, sy, wx, wy, moved = self.bdrag
+        dx, dy = e.x_root - sx, e.y_root - sy
+        if not moved and abs(dx) + abs(dy) < px(4):     # 조금 흔들린 것은 누름으로 본다
+            return
+        self.bdrag = (sx, sy, wx, wy, True)
+        self.bubble.geometry("+%d+%d" % (wx + dx, wy + dy))
+
+    def bub_release(self, e):
+        if self.bdrag is None:                   # 단추 위에서 누르지 않은 떼기 (✕ 를 누른 채 있다가 단추가 그 자리에 뜬 경우) — 펼치지 않는다
+            return
+        moved = self.bdrag[4]
+        self.bdrag = None
+        if moved:
+            self.keep_bubble_visible()
+        else:
+            self.unfold()
 
     def drain_tray(self):
         try:
@@ -2556,7 +2811,12 @@ class Widget:
         self.auto_var.set(self.autostart_on())
         self.auto_cache = self.auto_var.get()
         self._pop_t = time.monotonic()
-        self.m.tk_popup(x, y)
+        self.menu_open = True                    # 메뉴가 떠 있는 동안은 접지 않는다 (윈도우에서 tk_popup 은 메뉴가 닫힐 때 돌아온다)
+        try:
+            self.m.tk_popup(x, y)
+        finally:
+            self.menu_open = False
+            self.last_active = time.monotonic()
 
     def show_options(self):
         # 위젯이 화면 아래쪽에 있으면 윈도우가 메뉴를 위로 밀어 올려, 마지막 줄(위젯 완전 종료)이 톱니바퀴 자리에 오고
@@ -2574,7 +2834,8 @@ class Widget:
             return
         try:
             from tkinter import messagebox
-            if not messagebox.askyesno("업무위젯", "위젯을 완전히 끝낼까요?\n(창만 숨기려면 ✕ 를 누르세요)", parent=self.root):
+            parent = self.bubble if self.folded else self.root     # 접힌 동안 본 창은 숨어 있으니 단추 위에 묻는다
+            if not messagebox.askyesno("업무위젯", "위젯을 완전히 끝낼까요?\n(작게 접으려면 ✕, 트레이로 내리려면 – 를 누르세요)", parent=parent):
                 return
         except Exception:
             pass
@@ -2667,8 +2928,11 @@ class Widget:
 
     def tick(self):
         self.root.after(1000 - datetime.now().microsecond // 1000, self.tick)
-        if self.mini is not None:                # 트레이에 내려 둔 동안은 시계 카드를 넘기지 않는다 (되살리면 다음 초에 맞춰진다)
+        if self.mini is not None or self.folded:     # 트레이에 내려 두거나 접은 동안은 시계 카드를 넘기지 않는다 (되살리면 다음 초에 맞춰진다)
             return
+        self.tick_now()
+
+    def tick_now(self):
         d = datetime.now()
         vals = {"md": "%d/%d" % (d.month, d.day), "mo": "%02d" % d.month, "dd": "%02d" % d.day, "wk": "월화수목금토일"[d.weekday()],
                 "hh": "%02d" % d.hour, "mi": "%02d" % d.minute, "ss": "%02d" % d.second}
@@ -2689,6 +2953,10 @@ class Widget:
         self.ticks += 1
         if self.ticks % K.GUARD_EVERY == 0 and not self.dragging:
             self.keep_visible()
+        try:
+            self.fold_watch()
+        except Exception as e:
+            K.log_line("업무위젯 자동 접기 오류 %r" % e)
         self.root.after(400, self.poll)
 
     def mainloop(self):
