@@ -77,6 +77,27 @@ try:                                     # «업무전용 칸 쓰기» (⚙ → 
     MINE_ON = bool(K.load_state().get("mine_tile", True))
 except Exception:
     MINE_ON = True
+try:                                     # «가벼운 모드» (⚙ → 화면) — 느린 PC용: 넘김 시계·반짝임·서서히 사라지기·건수 자동 읽기를 끈다 (바꾸면 위젯을 다시 켠다)
+    LITE = bool(K.load_state().get("lite", False))
+except Exception:
+    LITE = False
+
+
+def low_spec():
+    """메모리 6GB 미만 또는 논리 코어 2개 이하면 True — 처음 켤 때 가벼운 모드를 권한다."""
+    try:
+        class _MS(_c0.Structure):
+            _fields_ = [("dwLength", _c0.c_ulong), ("dwMemoryLoad", _c0.c_ulong), ("ullTotalPhys", _c0.c_ulonglong),
+                        ("ullAvailPhys", _c0.c_ulonglong), ("ullTotalPageFile", _c0.c_ulonglong), ("ullAvailPageFile", _c0.c_ulonglong),
+                        ("ullTotalVirtual", _c0.c_ulonglong), ("ullAvailVirtual", _c0.c_ulonglong), ("ullAvailExtendedVirtual", _c0.c_ulonglong)]
+        ms = _MS()
+        ms.dwLength = _c0.sizeof(_MS)
+        ram = ms.ullTotalPhys / 1024 ** 3 if _c0.windll.kernel32.GlobalMemoryStatusEx(_c0.byref(ms)) else 99
+    except Exception:
+        ram = 99
+    return ram < 6 or (os.cpu_count() or 4) <= 2
+
+
 DPI = _screen_dpi()
 SC = DPI * UI_PCT / 100.0              # 그림 크기 배율 (글자는 윈도우가 화면 배율을 따로 곱해 주므로 UI_PCT 만)
 
@@ -547,6 +568,8 @@ class Tray:
 
 # ── 플립 시계 카드 (Pillow 가 있을 때만 — 없으면 그냥 숫자가 바뀐다) ──
 try:
+    if LITE:                             # 가벼운 모드: Pillow 를 읽지도 않는다 (그냥 숫자가 바뀐다)
+        raise ImportError("lite")
     from PIL import Image, ImageDraw, ImageFont, ImageTk
     _FLIP_FONT = str(_PL["b"]) if _ok else r"C:\Windows\Fonts\malgunbd.ttf"
     ImageFont.truetype(_FLIP_FONT, 10)
@@ -781,7 +804,7 @@ class Widget:
         self.sanctn_num = sc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         self.sanctn_lab = sc.create_text(TILE // 2, px(44), text="에듀파인\n결재대기", fill=WHITE, font=F(8, True), justify="center")
         sc.bind("<Button-1>", lambda e: self.click("sanctn"))                 # 눌러서 결재대기함 열기
-        sc.bind("<Button-3>", lambda e: (self.refresh_sanctn(manual=True), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침
+        sc.bind("<Button-3>", lambda e: ((self.refresh_counts_now() if LITE else self.refresh_sanctn(manual=True)), "break")[1])   # 오른쪽 클릭 = 숫자만 새로고침 (가벼운 모드: 기관접수도 같이)
         self.sanctn_look = (TILE_BG, EDGE, 1, False)           # (바탕, 테두리, 테두리 굵기, 알림 중?) — 결재대기가 있으면 눈에 띄게 바뀐다
         self.sanctn_hover = False
         self.glow_id = None          # 반짝임 타이머 (after id)
@@ -795,6 +818,7 @@ class Widget:
         self.jeopsu_num = jc.create_text(TILE // 2, px(17), text="--", fill="#a8a49b", font=F(17, True))
         jc.create_text(TILE // 2, px(44), text="교데통\n기관접수", fill=WHITE, font=F(8, True), justify="center")
         jc.bind("<Button-1>", lambda e: self.click("jeopsu"))
+        jc.bind("<Button-3>", lambda e: (self.refresh_counts_now(), "break")[1])   # 오른쪽 클릭 = 결재대기·기관접수 숫자 새로고침
         jc.bind("<Enter>", lambda e: jc.itemconfigure("edge", outline="#2b5148", fill="#eef6f2"))
         jc.bind("<Leave>", lambda e: jc.itemconfigure("edge", outline=EDGE, fill=TILE_BG))
         self.jeopsu_busy = False
@@ -853,6 +877,8 @@ class Widget:
         vm.add_cascade(label="자동 접기 (작은 단추로)", menu=fm)
         self.mine_var = tk.BooleanVar(value=MINE_ON)
         vm.add_checkbutton(label="업무전용 칸 쓰기 (끄면 예전 배치 · 위젯이 다시 켜져요)", variable=self.mine_var, command=self.on_mine)
+        self.lite_var = tk.BooleanVar(value=LITE)
+        vm.add_checkbutton(label="가벼운 모드 (느린 PC용 · 위젯이 다시 켜져요)", variable=self.lite_var, command=self.on_lite)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
         self.browser_var = tk.StringVar(value=browser_now())   # 브라우저 ▸ 크롬 / 엣지 — 위젯이 띄우는 창
         bm = tk.Menu(self.m, tearoff=0, font=F(10))
@@ -867,7 +893,8 @@ class Widget:
         self.notify_var = tk.BooleanVar(value=self.notify_on)
         am.add_checkbutton(label="결재대기 알림 (새로 오면 알려줘요)", variable=self.notify_var, command=self.toggle_notify)
         self.glow_var = tk.BooleanVar(value=self.glow_on)
-        am.add_checkbutton(label="결재대기 반짝임 (있으면 칸이 은은하게 깜빡여요)", variable=self.glow_var, command=self.toggle_glow)
+        am.add_checkbutton(label="결재대기 반짝임 (있으면 칸이 은은하게 깜빡여요)" + ("  · 가벼운 모드에선 꺼짐" if LITE else ""),
+                           variable=self.glow_var, command=self.toggle_glow, state="disabled" if LITE else "normal")
         daejeon = is_daejeon()                # DJE 메신저는 대전교육청용 — 지역이 대전일 때만 메뉴에 보인다
         if daejeon:
             self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
@@ -2115,7 +2142,7 @@ class Widget:
         if self.sanctn_hover:
             fill, outline, width = (("#fbd2cc" if fill == "#fde3df" else "#ffe69a"), outline, 3) if alert else ("#eef6f2", GREEN, 1)
         self.sanctn_cv.itemconfigure("edge", fill=fill, outline=outline, width=width)
-        glowing = alert and self.glow_on and fill in self.GLOW
+        glowing = alert and self.glow_on and not LITE and fill in self.GLOW
         if glowing and self.glow_id is None:
             self.glow_t0 = time.monotonic()
             self.glow_id = self.root.after(self.GLOW_TICK, self.glow_tick)
@@ -2213,6 +2240,43 @@ class Widget:
         self.save_pos()
         self.root.after(300, self.relaunch)
 
+    def on_lite(self):
+        """가벼운 모드 켜기/끄기 — 시계 그림·타이머가 처음부터 달라지므로 저장한 뒤 위젯을 다시 켠다."""
+        v = self.lite_var.get()
+        if v == LITE:
+            return
+        if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy:
+            self.lite_var.set(LITE)
+            self.say("하던 작업이 끝난 뒤 바꿔 주세요", "#c82014")
+            return
+        self.set_lite(v)
+
+    def set_lite(self, v):
+        K.save_state(lite=v, lite_asked=True)
+        self.say("가벼운 모드로 바꾸려고 위젯을 다시 켜요…" if v else "보통 모드로 바꾸려고 위젯을 다시 켜요…", "#5c5c5c")
+        self.save_pos()
+        self.root.after(300, self.relaunch)
+
+    def ask_lite(self):
+        """사양이 낮은 PC에서 처음 한 번만 가벼운 모드를 권한다 (답은 기억 — ⚙ → 화면 에서 언제든 바꿀 수 있다)."""
+        if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy or self.folded or self.mini is not None:
+            self.root.after(60_000, self.ask_lite)
+            return
+        from tkinter import messagebox
+        yes = messagebox.askyesno(
+            "업무위젯 — 가벼운 모드",
+            "이 PC는 메모리나 CPU가 넉넉하지 않아 보여요.\n\n"
+            "가벼운 모드로 바꿀까요?\n"
+            " · 시계는 넘김 그림 없이 숫자로\n"
+            " · 결재대기 반짝임, 서서히 사라지기 끔\n"
+            " · 결재대기·기관접수 숫자는 자동으로 읽지 않고\n"
+            "   칸을 오른쪽 클릭할 때만 읽어요\n\n"
+            "나중에 ⚙ → 화면 → 가벼운 모드 에서 언제든 바꿀 수 있어요.", parent=self.root)
+        if yes:
+            self.set_lite(True)
+        else:
+            K.save_state(lite_asked=True)
+
     @staticmethod
     def mask_private(text):
         """기록에 섞일 수 있는 개인 정보를 가린다 — 작은따옴표 안(인증서 이름 등) · 윈도우 사용자 폴더 이름 · 메일 주소 · 6자리 이상 숫자."""
@@ -2297,6 +2361,16 @@ class Widget:
         """30분마다 결재대기·기관접수대기를 한 번에 읽는다 (check_counts.py · 파이썬·크롬 연결을 한 번만 띄운다).
         다른 작업 중이라 못 읽었으면 1분 뒤 다시 본다."""
         self.root.after(SANCTN_EVERY_MS if self.refresh_counts() else 60_000, self.counts_loop)
+
+    def refresh_counts_now(self):
+        """칸 오른쪽 클릭 — 결재대기·기관접수대기를 지금 한 번 읽는다."""
+        if self.sanctn_busy or self.jeopsu_busy or self.busy:
+            self.say("다른 작업이 끝난 뒤 다시 눌러 주세요", "#c82014")
+        elif not K.configured():
+            self.say("⚙ → 환경설정 (지역·인증서·암호)부터 해 주세요", "#c82014")
+        else:
+            self.refresh_counts()
+            self.say("결재대기·기관접수 숫자를 읽고 있어요…", "#5c5c5c")
 
     # ── 결재대기 + 교육행정데이터통합관리 기관접수대기 건수 (check_counts.py 가 숫자만 읽는다) ──
     def refresh_counts(self):
@@ -2646,10 +2720,10 @@ class Widget:
         old = self.fade_ids.pop(key, None)
         if old is not None:
             self.root.after_cancel(old)
-        steps = max(1, ms // FADE_STEP_MS)
+        steps = 0 if LITE else max(1, ms // FADE_STEP_MS)     # 가벼운 모드: 한 번에 바꾼다
 
         def step(i):
-            t = i / steps
+            t = i / steps if steps else 1.0
             t = t * t * (3 - 2 * t)                # 처음·끝을 부드럽게
             try:
                 win.attributes("-alpha", a0 + (a1 - a0) * t)
@@ -2957,7 +3031,7 @@ class Widget:
             self.fold_watch()
         except Exception as e:
             K.log_line("업무위젯 자동 접기 오류 %r" % e)
-        self.root.after(400, self.poll)
+        self.root.after(1000 if LITE else 400, self.poll)      # 가벼운 모드: 1초마다 (화면 밖 확인은 5초마다)
 
     def mainloop(self):
         threading.Thread(target=self.migrate_shortcuts, daemon=True).start()
@@ -2968,7 +3042,12 @@ class Widget:
         self.poll()
         if self.dje_auto and is_daejeon() and K.configured():
             self.root.after(1_000, lambda: self.dje_watch(time.time() + 600))  # 켠 지 1초 뒤부터 DJE 메신저를 지켜보다 뜨면 자동 로그인 (체크했을 때만)
-        self.root.after(30_000, self.counts_loop)           # 켠 지 30초 뒤 첫 읽기 (그 사이 업무포털 로그인을 마칠 시간) — 결재대기·기관접수 한 번에
+        if not LITE:                                         # 가벼운 모드는 자동으로 읽지 않는다 (칸 오른쪽 클릭 · 화면을 열 때만)
+            self.root.after(30_000, self.counts_loop)       # 켠 지 30초 뒤 첫 읽기 (그 사이 업무포털 로그인을 마칠 시간) — 결재대기·기관접수 한 번에
+        elif K.configured():
+            self.root.after(2_000, lambda: self.say("가벼운 모드 · 결재대기·기관접수 숫자는 칸을 오른쪽 클릭하면 읽어요", "#5c5c5c"))
+        if not LITE and not K.load_state().get("lite_asked") and low_spec():
+            self.root.after(5_000, self.ask_lite)            # 느린 PC면 처음 한 번만 가벼운 모드를 권한다
         if UPD is not None:
             self.root.after(120_000, self.update_loop)
             v = UPD.just_updated(KIT)
