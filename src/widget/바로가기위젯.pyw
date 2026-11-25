@@ -748,6 +748,7 @@ class Widget:
             self.ai_place_var = tk.StringVar(value="title" if st.get("ai_place") == "title" else "top")
             self.root.update_idletasks()
             self.ai_bar = AI.AiBar(self.root, PANEL, px, F, self.title_lb.winfo_reqheight(), big=self.ai_place_var.get() == "top")
+            self.ai_bar.notify = lambda t, x: self.tray.balloon(t, x)      # 승인 대기 알림 (트레이 알림)
             self.apply_ai(save=False)
 
         self.bar = bar
@@ -934,7 +935,7 @@ class Widget:
                 if k in self.ai_have:
                     aim.add_checkbutton(label=name + (" (크게)" if k == "claude" else ""), variable=self.ai_vars[k], command=self.apply_ai)
             if "claude" in self.ai_have:
-                aim.add_checkbutton(label="Claude 상태 색 (작업 중 주황·승인 대기 파랑)", variable=self.ai_wait_var, command=self.apply_ai)
+                aim.add_checkbutton(label="Claude 상태 색·승인 대기 알림 (작업 중 주황·승인 대기 파랑)", variable=self.ai_wait_var, command=self.apply_ai)
             aim.add_separator()
             aim.add_command(label="지금 새로 읽기", command=lambda: self.ai_bar.poller.refresh())
             self.m.add_cascade(label="AI 사용량 (%s)" % "·".join(n for k, n in AI.PROVIDERS if k in self.ai_have), menu=aim)
