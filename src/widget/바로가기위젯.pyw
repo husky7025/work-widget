@@ -990,7 +990,7 @@ class Widget:
         on = self.memo_var.get()
         self.memo_strip.pack_forget()
         if on:
-            self.memo_strip.pack(fill="x", padx=PAD, pady=(px(6), 0), before=self.status)
+            self.memo_strip.pack(fill="x", padx=PAD, pady=(px(4), px(2)), before=self.grid)      # 날짜 카드들 바로 위
         self.memo_strip.set_active(on)
         if save:
             try:
