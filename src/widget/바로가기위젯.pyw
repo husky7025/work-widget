@@ -46,7 +46,12 @@ try:                                         # 자동 업데이트 (서명 확�
     _uspec.loader.exec_module(UPD)
 except Exception:
     UPD = None
-UPDATE_HOUR = 12                         # 새 버전 확인: 위젯을 켤 때(2분쯤 뒤) 한 번 + 매일 정오에 한 번 (정오에 꺼져 있었으면 켤 때 확인으로 대신)
+try:                                         # AI 사용량 링 (Claude·agy) — 없거나 고장 나도 위젯은 그대로 뜬다
+    sys.path.insert(0, str(HERE0))
+    import ai_usage as AI
+except Exception:
+    AI = None
+UPDATE_HOUR = 12                        # 새 버전 확인: 위젯을 켤 때(2분쯤 뒤) 한 번 + 매일 정오에 한 번 (정오에 꺼져 있었으면 켤 때 확인으로 대신)
 UPDATE_POLL_MS = 5 * 60 * 1000           # 정오가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
 import ctypes as _c0
 
@@ -726,6 +731,24 @@ class Widget:
             if text == "⚙":
                 self.gear = b
         self.pin_label.configure(fg="#5c5c5c" if self.pinned else "#b5b0a5")
+        # AI 사용량 링 — 이 PC 에 Claude Code 나 agy 가 있을 때만 메뉴에 보이고, 처음엔 꺼져 있다 (⚙ → AI 사용량)
+        self.bar = bar
+        self.ai_have = {}
+        self.ai_bar = None
+        if AI is not None and not LITE:
+            try:
+                self.ai_have = {k: v for k, v in AI.available().items() if v}
+            except Exception:
+                self.ai_have = {}
+        if self.ai_have:
+            show = st.get("ai_show") if isinstance(st.get("ai_show"), list) else list(self.ai_have)
+            self.ai_on_var = tk.BooleanVar(value=bool(st.get("ai_bar", False)))
+            self.ai_vars = {k: tk.BooleanVar(value=k in show) for k in self.ai_have}
+            self.ai_wait_var = tk.BooleanVar(value=bool(st.get("ai_wait", True)))
+            self.ai_place_var = tk.StringVar(value="title" if st.get("ai_place") == "title" else "top")
+            self.root.update_idletasks()
+            self.ai_bar = AI.AiBar(self.root, PANEL, px, F, self.title_lb.winfo_reqheight(), big=self.ai_place_var.get() == "top")
+            self.apply_ai(save=False)
 
         self.bar = bar
         grid = tk.Frame(self.root, bg=PANEL)
@@ -900,6 +923,21 @@ class Widget:
             self.dje_auto_var = tk.BooleanVar(value=self.dje_auto)
             am.add_checkbutton(label="위젯을 켤 때 DJE 메신저 자동 로그인", variable=self.dje_auto_var, command=self.toggle_dje_auto)
         self.m.add_cascade(label="자동 실행·알림", menu=am)
+        if self.ai_bar is not None:                       # AI 사용량 ▸ (이 PC 에 Claude Code·agy 가 있을 때만)
+            aim = tk.Menu(self.m, tearoff=0, font=F(10))
+            aim.add_checkbutton(label="AI 사용량 보이기", variable=self.ai_on_var, command=self.apply_ai)
+            aim.add_radiobutton(label="    위젯 위쪽 줄에 크게", variable=self.ai_place_var, value="top", command=self.apply_ai)
+            aim.add_radiobutton(label="    제목 줄에 작게", variable=self.ai_place_var, value="title", command=self.apply_ai)
+            aim.add_separator()
+            aim.add_separator()
+            for k, name in AI.PROVIDERS:
+                if k in self.ai_have:
+                    aim.add_checkbutton(label=name + (" (크게)" if k == "claude" else ""), variable=self.ai_vars[k], command=self.apply_ai)
+            if "claude" in self.ai_have:
+                aim.add_checkbutton(label="Claude 상태 색 (작업 중 주황·승인 대기 파랑)", variable=self.ai_wait_var, command=self.apply_ai)
+            aim.add_separator()
+            aim.add_command(label="지금 새로 읽기", command=lambda: self.ai_bar.poller.refresh())
+            self.m.add_cascade(label="AI 사용량 (%s)" % "·".join(n for k, n in AI.PROVIDERS if k in self.ai_have), menu=aim)
         # DJE 메신저 로그인은 4번 단추(DJE Talk)로 옮겼다 — 메뉴에는 «켤 때 자동 로그인» 켜고 끄기만 남긴다
         hm = tk.Menu(self.m, tearoff=0, font=F(10))       # 도움말 ▸ 사용설명서·업데이트·문제 해결
         hm.add_command(label="사용설명서", command=self.open_guide)
@@ -914,7 +952,35 @@ class Widget:
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
         self.apply_clock(save=False)
 
-    # ── 시계 카드 켜기·끄기 (끈 카드는 빠지고 남은 카드끼리 붙는다. 예전 배치에서 모두 끄면 윗줄이 빠지고 위젯 높이가 줄어든다) ──
+    # ── AI 사용량 링 (위젯 위쪽 줄에 크게 / 제목 줄 📍 왼쪽에 작게) ──
+    def ai_extra(self):
+        """위쪽 줄 모드로 링이 보이면 그만큼 위젯을 늘린다"""
+        return px(AI.BIG_H) + px(4) if getattr(self, "ai_top_on", False) else 0
+
+    def apply_ai(self, save=True):
+        names = [k for k, v in self.ai_vars.items() if v.get()]
+        on = self.ai_on_var.get() and bool(names)
+        top = self.ai_place_var.get() == "top"
+        self.ai_bar.pack_forget()
+        self.ai_top_on = on and top
+        if on:
+            self.ai_bar.set_big(top)
+            self.ai_bar.configure_show(names, self.ai_wait_var.get())
+            if top:
+                self.ai_bar.pack(in_=self.root, after=self.bar, pady=(px(4), 0))
+            else:
+                self.ai_bar.pack(in_=self.bar, side="right", padx=(0, px(2)), after=self.pin_label)
+        else:
+            self.ai_bar.configure_show([], False)
+        if save:
+            try:
+                K.save_state(ai_bar=self.ai_on_var.get(), ai_show=names, ai_wait=self.ai_wait_var.get(), ai_place=self.ai_place_var.get())
+            except Exception:
+                pass
+            self.apply_clock(save=False)                  # 위젯 높이 다시 맞추기
+            self.keep_visible()
+
+    # ── 시계 카드 켜기·끄기(끈 카드는 빠지고 남은 카드끼리 붙는다. 예전 배치에서 모두 끄면 윗줄이 빠지고 위젯 높이가 줄어든다) ──
     def set_all_clock(self, on):
         for v in self.clock_vars.values():
             v.set(on)
@@ -934,6 +1000,7 @@ class Widget:
         else:
             self.clock_row.grid_remove()
         self.base_h = SIZE_H if (on or MINE_ON) else SIZE_H - (TILE + GAP)   # 업무전용 배치는 윗줄에 기관접수대기 칸이 있어서 높이 그대로
+        self.base_h += self.ai_extra()
         self.set_height(self.base_h)
         if save:
             try:
