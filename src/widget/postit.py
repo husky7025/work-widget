@@ -77,6 +77,31 @@ def ime_font(w):
         return False
 
 
+# ── 둥근 모서리: 테두리 없는 창을 둥근 사각형 모양으로 오려 낸다 (윈도우 창 영역) ──
+def round_corners(win, radius):
+    """win(테두리 없는 Toplevel)의 모서리를 radius(px) 만큼 둥글게. 창 크기가 바뀔 때마다 다시 부른다. 안 되는 PC에서는 조용히 넘어간다."""
+    try:
+        u, g = ctypes.windll.user32, ctypes.windll.gdi32
+        u.GetAncestor.restype = ctypes.c_void_p
+        u.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        g.CreateRoundRectRgn.restype = ctypes.c_void_p
+        u.SetWindowRgn.argtypes = [ctypes.c_void_p, ctypes.c_void_p, ctypes.c_int]
+        hwnd = u.GetAncestor(win.winfo_id(), 2)              # GA_ROOT: Tk 가 감싼 바깥 창
+        w, h = win.winfo_width(), win.winfo_height()
+        if not hwnd or w < 20 or h < 20 or getattr(win, "_rounded", None) == (w, h):     # 같은 크기면 다시 하지 않는다 (신호가 되풀이되지 않게)
+            return False
+        win._rounded = (w, h)
+        rgn = g.CreateRoundRectRgn(0, 0, w + 1, h + 1, 2 * radius, 2 * radius)
+        return bool(u.SetWindowRgn(hwnd, rgn, True))         # 영역은 이 뒤로 윈도우가 관리한다
+    except Exception:
+        return False
+
+
+def make_round(win, radius):
+    win.bind("<Configure>", lambda e: round_corners(win, radius) if e.widget is win else None, add="+")
+    win.after(60, lambda: win.winfo_exists() and round_corners(win, radius))
+
+
 def memo_fs(m):
     try:
         return max(FS_MIN, min(FS_MAX, int(m.get("fs") or FS_DEF)))
@@ -398,6 +423,7 @@ def notice_popup(master, px, font, title, sub="", body=(), p=None, warn=False):
     live = [q for q in _LIVE_NOTICES if q.winfo_exists()]
     off = len(live) * px(28)                           # 여러 개가 한꺼번에 울리면 조금씩 비껴 쌓는다
     d.geometry("%dx%d+%d+%d" % (w, h, max(0, (sw - w) // 2 + off), max(0, (sh - h) // 2 + off)))
+    make_round(d, px(12))
     d.lift()
     _LIVE_NOTICES[:] = live + [d]
     try:
@@ -441,6 +467,7 @@ class PostIt(tk.Toplevel):
             y = root.winfo_rooty()
         x, y = max(0, min(int(x), sw - W)), max(0, min(int(y), sh - H - px(40)))
         self.geometry("%dx%d+%d+%d" % (W, H, x, y))
+        make_round(self, px(12))
         self.inner = inner = tk.Frame(self, bg=c["bg"])
         inner.pack(fill="both", expand=True, padx=1, pady=1)
 
@@ -497,7 +524,7 @@ class PostIt(tk.Toplevel):
             self._rs_bind(f, mode)
         self.grip = gr = tk.Label(self, text="◢", bg=c["bg"], fg=c["edge"], font=self.font(8), cursor="size_nw_se",
                                   bd=0, padx=0, pady=0, anchor="se")
-        gr.place(relx=1.0, rely=1.0, anchor="se", width=g, height=g)
+        gr.place(relx=1.0, rely=1.0, x=-px(5), y=-px(5), anchor="se", width=g, height=g)     # 둥근 모서리에 잘리지 않게 안쪽으로
         self._rs_bind(gr, "se")
 
     # 글자 받기: 테두리 없는 창은 누를 때 한 번 앞으로 가져와야 키보드가 들어온다 (포커스 이벤트 안에서는 옮기지 않는다)
