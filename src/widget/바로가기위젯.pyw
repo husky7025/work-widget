@@ -51,6 +51,10 @@ try:                                         # AI 사용량 링 (Claude·agy) �
     import ai_usage as AI
 except Exception:
     AI = None
+try:
+    import postit as MEMO
+except Exception:
+    MEMO = None
 UPDATE_HOUR = 12                        # 새 버전 확인: 위젯을 켤 때(2분쯤 뒤) 한 번 + 매일 정오에 한 번 (정오에 꺼져 있었으면 켤 때 확인으로 대신)
 UPDATE_POLL_MS = 5 * 60 * 1000           # 정오가 됐는지 5분마다 본다 (절전에서 깨어나도 놓치지 않게)
 import ctypes as _c0
@@ -746,9 +750,11 @@ class Widget:
             self.ai_vars = {k: tk.BooleanVar(value=k in show) for k in self.ai_have}
             self.ai_wait_var = tk.BooleanVar(value=bool(st.get("ai_wait", True)))
             self.ai_place_var = tk.StringVar(value="title" if st.get("ai_place") == "title" else "top")
+            self.ai_done_var = tk.BooleanVar(value=bool(st.get("ai_done", True)))
+            self.ai_reset_var = tk.BooleanVar(value=bool(st.get("ai_reset", True)))
             self.root.update_idletasks()
             self.ai_bar = AI.AiBar(self.root, PANEL, px, F, self.title_lb.winfo_reqheight(), big=self.ai_place_var.get() == "top")
-            self.ai_bar.notify = lambda t, x: self.tray.balloon(t, x)      # 승인 대기 알림 (트레이 알림)
+            self.ai_bar.notify = lambda t, x: self.show_notice(t, x)      # 승인 대기·작업 끝·한도 알림 (화면 가운데 알림 창)
             self.apply_ai(save=False)
 
         self.bar = bar
@@ -850,6 +856,7 @@ class Widget:
 
         self.status = tk.Label(self.root, text="", bg=PANEL, fg="#c82014", font=F(8), anchor="w")
         self.status.pack(fill="x", padx=PAD + px(2), pady=(px(6), 0))
+        self.build_memo(st)
         for w in (self.root, self.bgc, bar, self.title_lb, grid, self.status):
             self.bind_drag(w)
 
@@ -901,6 +908,8 @@ class Widget:
         vm.add_cascade(label="자동 접기 (작은 단추로)", menu=fm)
         self.mine_var = tk.BooleanVar(value=MINE_ON)
         vm.add_checkbutton(label="업무전용 칸 쓰기 (끄면 예전 배치 · 위젯이 다시 켜져요)", variable=self.mine_var, command=self.on_mine)
+        if self.memo_strip is not None:
+            vm.add_checkbutton(label="메모 보이기 (포스트잇·체크리스트·알림 · 이 PC에만 저장)", variable=self.memo_var, command=self.apply_memo)
         self.lite_var = tk.BooleanVar(value=LITE)
         vm.add_checkbutton(label="가벼운 모드 (느린 PC용 · 위젯이 다시 켜져요)", variable=self.lite_var, command=self.on_lite)
         self.m.add_cascade(label="화면 (시계·투명도·크기)", menu=vm)
@@ -936,6 +945,8 @@ class Widget:
                     aim.add_checkbutton(label=name + (" (크게)" if k == "claude" else ""), variable=self.ai_vars[k], command=self.apply_ai)
             if "claude" in self.ai_have:
                 aim.add_checkbutton(label="Claude 상태 색·승인 대기 알림 (작업 중 주황·승인 대기 파랑)", variable=self.ai_wait_var, command=self.apply_ai)
+                aim.add_checkbutton(label="Claude 작업 끝 알림 (5분 넘게 걸린 작업)", variable=self.ai_done_var, command=self.apply_ai)
+            aim.add_checkbutton(label="초기화 알림 (90%% 넘게 썼다가 다시 쓸 수 있을 때)", variable=self.ai_reset_var, command=self.apply_ai)
             aim.add_separator()
             aim.add_command(label="지금 새로 읽기", command=lambda: self.ai_bar.poller.refresh())
             self.m.add_cascade(label="AI 사용량 (%s)" % "·".join(n for k, n in AI.PROVIDERS if k in self.ai_have), menu=aim)
@@ -953,6 +964,44 @@ class Widget:
         self.root.bind("<Button-3>", lambda e: self.popup(e.x_root, e.y_root))
         self.apply_clock(save=False)
 
+    # ── 메모 줄 (메모마다 칩 → 누르면 포스트잇 창 · 메모장/체크리스트 · 알림 시각) — postit.py ──
+    def build_memo(self, st):
+        self.memo_var = tk.BooleanVar(value=bool(st.get("memo_on", False)))
+        self.memo_strip = None
+        if MEMO is None:
+            return
+        memos = st.get("memos") if isinstance(st.get("memos"), list) else []
+        if not memos and str(st.get("memo") or "").strip():           # 예전 한 줄 메모 → 첫 포스트잇
+            memos = [MEMO.new_memo(text=str(st.get("memo")).strip())]
+        self.memo_strip = MEMO.MemoStrip(self.root, PANEL, px, F, memos, save=lambda ms: K.save_state(memos=ms),
+                                         notify=lambda t, x: self.show_notice(t, x), topmost=lambda: self.pinned)
+        self.memo_strip.update_idletasks()                            # 높이를 미리 재 둔다 (위젯 높이 계산용)
+        self.memo_h = self.memo_strip.winfo_reqheight()
+        self.apply_memo(save=False)
+        if self.memo_var.get():
+            self.root.after(800, self.memo_strip.reopen)              # 열어 둔 채로 끈 포스트잇은 다시 연다
+
+    def memo_extra(self):
+        return self.memo_h + px(6) if self.memo_strip is not None and self.memo_var.get() else 0
+
+    def apply_memo(self, save=True):
+        if self.memo_strip is None:
+            return
+        on = self.memo_var.get()
+        self.memo_strip.pack_forget()
+        if on:
+            self.memo_strip.pack(fill="x", padx=PAD, pady=(px(6), 0), before=self.status)
+        self.memo_strip.set_active(on)
+        if save:
+            try:
+                K.save_state(memo_on=on)
+            except Exception:
+                pass
+            if on:
+                self.memo_strip.reopen()
+            self.apply_clock(save=False)                  # 위젯 높이 다시 맞추기
+            self.keep_visible()
+
     # ── AI 사용량 링 (위젯 위쪽 줄에 크게 / 제목 줄 📍 왼쪽에 작게) ──
     def ai_extra(self):
         """위쪽 줄 모드로 링이 보이면 그만큼 위젯을 늘린다"""
@@ -962,6 +1011,8 @@ class Widget:
         names = [k for k, v in self.ai_vars.items() if v.get()]
         on = self.ai_on_var.get() and bool(names)
         top = self.ai_place_var.get() == "top"
+        self.ai_bar.done_on = self.ai_done_var.get()
+        self.ai_bar.reset_on = self.ai_reset_var.get()
         self.ai_bar.pack_forget()
         self.ai_top_on = on and top
         if on:
@@ -975,7 +1026,8 @@ class Widget:
             self.ai_bar.configure_show([], False)
         if save:
             try:
-                K.save_state(ai_bar=self.ai_on_var.get(), ai_show=names, ai_wait=self.ai_wait_var.get(), ai_place=self.ai_place_var.get())
+                K.save_state(ai_bar=self.ai_on_var.get(), ai_show=names, ai_wait=self.ai_wait_var.get(), ai_place=self.ai_place_var.get(),
+                             ai_done=self.ai_done_var.get(), ai_reset=self.ai_reset_var.get())
             except Exception:
                 pass
             self.apply_clock(save=False)                  # 위젯 높이 다시 맞추기
@@ -1001,7 +1053,7 @@ class Widget:
         else:
             self.clock_row.grid_remove()
         self.base_h = SIZE_H if (on or MINE_ON) else SIZE_H - (TILE + GAP)   # 업무전용 배치는 윗줄에 기관접수대기 칸이 있어서 높이 그대로
-        self.base_h += self.ai_extra()
+        self.base_h += self.ai_extra() + self.memo_extra()
         self.set_height(self.base_h)
         if save:
             try:
@@ -2242,6 +2294,23 @@ class Widget:
         self.paint_sanctn()
         self.say("결재대기 반짝임을 켰어요" if self.glow_on else "결재대기 반짝임을 껐어요", "#00754A" if self.glow_on else "#5c5c5c")
 
+    def show_notice(self, title, text="", warn=False):
+        """위젯의 모든 알림은 여기로: 화면 가운데에 «업무위젯 알림» 창을 띄운다 (윈도우 풍선 알림은 앱 이름이 Python 으로 나온다).
+        알림 창을 못 띄울 때만 트레이 풍선으로 대신한다. 띄웠으면 True."""
+        try:
+            if MEMO is None:
+                raise RuntimeError("알림 창 모듈이 없음")
+            MEMO.notice_popup(self.root, px, F, title, "", [text] if text else [], warn=warn)
+            return True
+        except Exception as e:
+            K.log_line("업무위젯 알림 창 오류 %r — 트레이 알림으로 대신" % e)
+            try:
+                self.tray.balloon(title, text, warn)
+                return True
+            except Exception as e2:
+                K.log_line("업무위젯 알림 오류 %r" % e2)
+                return False
+
     def notify_sanctn(self, wait, urgent):
         """결재대기·긴급이 지난번보다 «늘었을 때만» 윈도우 알림을 띄운다 (처음 읽을 때는 기준만 저장 · 줄거나 같으면 조용히)."""
         prev = self.sanctn_last
@@ -2259,10 +2328,7 @@ class Widget:
             title, text, warn = "결재대기가 새로 왔어요", "새로 %d건 · 결재대기 모두 %d건" % (new_wait, wait), False
         else:
             return
-        try:
-            temp = self.tray.balloon(title, text, warn)
-        except Exception as e:
-            K.log_line("업무위젯 알림 오류 %r" % e)
+        if not self.show_notice(title, text, warn):
             return
         K.log_line("업무위젯 결재대기 알림: %s" % text)
         # 트레이 아이콘은 항상 달려 있으므로 알림 뒤에 떼지 않는다

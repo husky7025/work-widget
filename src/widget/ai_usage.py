@@ -190,6 +190,19 @@ def fetch_codex():
     return {"ok": True, "pct": pct, "reset": reset, "groups": [{"name": plan, "b": b}], "limit": bool(rl.get("limit_reached"))}
 
 
+def claude_sessions():
+    """세션마다 (상태, 마지막 기록 시각) — 작업 끝 알림용"""
+    try:
+        d = json.loads(CLAUDE_STATE.read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+    out = {}
+    for k, v in (d.get("sessions") or {}).items():
+        if isinstance(v, dict):
+            out[k] = (v.get("state"), float(v.get("ts") or 0))
+    return out
+
+
 def claude_state():
     """Claude Code 상태 — "wait"(승인·답 기다림) / "work"(작업 중) / "idle". 여러 창이면 기다림 > 작업 > 쉼."""
     try:
@@ -311,8 +324,40 @@ def ring_color(p):
     return "#c82014" if p >= 90 else "#d6336c" if p >= 70 else "#00754A"     # 70%+ 분홍 (작업 중 주황과 구분)
 
 
-WAIT_ALERT = 60     # 승인 대기가 이만큼(초) 이어지면 한 번 알린다
+DONE_ALERT = 300    # 이만큼(초) 넘게 걸린 작업이 끝나면 알린다
+LOW_PCT = 90        # 이만큼 썼다가 초기화되면 «다시 써도 돼요»
+WAIT_ALERT = 180     # 승인 대기가 이만큼(초) 이어지면 한 번 알린다
 BIG_H = 40          # 위쪽 줄(크게) 모드의 줄 높이 (px 배율 전)
+
+
+def _exe_of(h):
+    """창 핸들 → 실행 파일 경로"""
+    try:
+        import ctypes
+        from ctypes import wintypes as W
+        u, k = ctypes.windll.user32, ctypes.windll.kernel32
+        pid = W.DWORD()
+        u.GetWindowThreadProcessId(h, ctypes.byref(pid))
+        hp = k.OpenProcess(0x1000, False, pid.value)                # PROCESS_QUERY_LIMITED_INFORMATION
+        if not hp:
+            return ""
+        try:
+            buf = ctypes.create_unicode_buffer(520)
+            n = W.DWORD(520)
+            return buf.value if k.QueryFullProcessImageNameW(hp, 0, buf, ctypes.byref(n)) else ""
+        finally:
+            k.CloseHandle(hp)
+    except Exception:
+        return ""
+
+
+def claude_in_front():
+    """지금 맨 앞 창이 Claude 앱인가 (보고 있으면 작업 끝 알림을 띄우지 않는다)"""
+    try:
+        import ctypes
+        return os.path.basename(_exe_of(ctypes.windll.user32.GetForegroundWindow())).lower() == "claude.exe"
+    except Exception:
+        return False
 
 
 def focus_claude():
@@ -387,6 +432,10 @@ class AiBar(tk.Frame):
         self.blink = False
         self.state = "idle"
         self.notify = None          # (제목, 내용) → 윈도우 알림. 위젯이 넣어 준다
+        self.done_on = True         # Claude 작업 끝 알림
+        self.reset_on = True        # 바닥났다가 초기화되면 알림
+        self.work_start = {}        # 세션 → 작업을 처음 본 때
+        self.low = {}               # 이름 → 90% 넘었을 때의 초기화 시각
         self.wait_since = None
         self.wait_told = False
         self.next_name = None
@@ -438,16 +487,62 @@ class AiBar(tk.Frame):
                 self.wait_told = True
                 if self.notify:
                     try:
-                        self.notify("Claude 가 승인을 기다려요", "1분 넘게 기다리는 중이에요. 업무위젯의 Claude 링을 누르면 Claude 창이 앞으로 와요.")
+                        self.notify("Claude 가 승인을 기다려요", "3분 넘게 기다리는 중이에요. 업무위젯의 Claude 링을 누르면 Claude 창이 앞으로 와요.")
                     except Exception:
                         pass
         else:
             self.wait_since, self.wait_told = None, False
+        self._check_done()
+        self._check_reset()
         self.blink = not self.blink
         if self.winfo_ismapped():                  # 트레이·접힘 동안은 그리지 않는다
             self.draw()
         if self.tip_name:
             self._tip(self.tip_name, move=False)
+
+    def _say(self, title, text):
+        if self.notify:
+            try:
+                self.notify(title, text)
+            except Exception:
+                pass
+
+    def _check_done(self):
+        """세션마다 작업 시작을 기억했다가, 5분 넘게 걸린 작업이 끝나면(쉼) 알린다"""
+        if "claude" not in self.show or not self.done_on:
+            self.work_start = {}
+            return
+        now = time.time()
+        ss = claude_sessions()
+        done = 0
+        for sid, (st, ts) in ss.items():
+            if st in ("work", "wait") and now - ts < WORK_STALE:
+                self.work_start.setdefault(sid, now)
+            elif st == "idle" and sid in self.work_start:
+                if now - self.work_start.pop(sid) >= DONE_ALERT:
+                    done += 1
+        for sid in [k for k in self.work_start if k not in ss]:      # 세션을 닫았으면 조용히 잊는다
+            self.work_start.pop(sid)
+        if done and not claude_in_front():
+            self._say("Claude 작업이 끝났어요", "오래 걸린 작업이 끝났어요. 결과를 확인해 보세요."
+                      if done == 1 else "작업 %d개가 끝났어요. 결과를 확인해 보세요." % done)
+
+    def _check_reset(self):
+        """90% 넘게 썼던 도구가 초기화되어 다시 여유가 생기면 한 번 알린다"""
+        if not self.reset_on:
+            self.low = {}
+            return
+        with self.poller.lock:
+            data = {k: dict(v) for k, v in self.poller.data.items() if k in self.show}
+        for n, v in data.items():
+            if not v.get("ok") or v.get("note"):
+                continue
+            p, r = v.get("pct", 0), v.get("reset")
+            if p >= LOW_PCT or v.get("limit"):
+                self.low[n] = r
+            elif n in self.low and not _same_reset(self.low[n], r):
+                self.low.pop(n)
+                self._say("%s 다시 써도 돼요" % dict(PROVIDERS)[n], "사용량이 초기화됐어요 (지금 %d%%)." % p)
 
     def draw(self):
         px = self.px
