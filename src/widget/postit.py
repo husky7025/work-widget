@@ -5,8 +5,10 @@
 포스트잇 안은 메모장(여러 줄 글) 또는 체크리스트로 고를 수 있고, ⏰ 로 시각을 정하면 그때 윈도우 알림을 띄우고 창을 연다.
 메모는 위젯 상태 파일(이 PC)에만 저장한다.
 """
+import ctypes
 import time
 import tkinter as tk
+import tkinter.font as tkfont
 import uuid
 from datetime import datetime, timedelta
 from tkinter import messagebox
@@ -19,6 +21,7 @@ HINT = "#a39a73"
 DONE = "#a8a49b"
 ALARM_EVERY = 1000   # 알림 시각을 몇 ms 마다 볼지 (시각은 분 단위라 1초면 늦어도 1초)
 CHIP_MAX = 4          # 메모 줄에 칩을 몇 개까지 (나머지는 «외 N개 ▾»)
+FS_MIN, FS_MAX, FS_DEF = 8, 40, 10   # 메모 글씨 크기 (pt)
 ALPHA_MIN = 0.3       # 이보다 더 투명하면 글을 읽을 수 없다
 
 # 포스트잇 색: 바탕 · 머리줄(열린 칩) · 테두리 · 입력칸
@@ -38,6 +41,49 @@ def pal(m):
     return PALETTE.get(m.get("color")) or PALETTE["yellow"]
 
 
+# ── 한글 입력기(IME) 조합 창 글씨 크기 ──
+# Tk 는 «아직 입력 중인 글자»를 칸 안이 아니라 윈도우 입력기의 작은 창에 그린다. 그 창의 글씨를 칸의 글씨 크기에 맞춘다.
+class _LOGFONTW(ctypes.Structure):
+    _fields_ = [("lfHeight", ctypes.c_long), ("lfWidth", ctypes.c_long), ("lfEscapement", ctypes.c_long),
+                ("lfOrientation", ctypes.c_long), ("lfWeight", ctypes.c_long), ("lfItalic", ctypes.c_ubyte),
+                ("lfUnderline", ctypes.c_ubyte), ("lfStrikeOut", ctypes.c_ubyte), ("lfCharSet", ctypes.c_ubyte),
+                ("lfOutPrecision", ctypes.c_ubyte), ("lfClipPrecision", ctypes.c_ubyte), ("lfQuality", ctypes.c_ubyte),
+                ("lfPitchAndFamily", ctypes.c_ubyte), ("lfFaceName", ctypes.c_wchar * 32)]
+
+
+def ime_font(w):
+    """칸 w 의 글꼴·크기를 입력기 조합 창에 알린다. 성공하면 True (안 되는 PC에서는 조용히 넘어간다)"""
+    try:
+        f = tkfont.Font(root=w, font=w.cget("font")).actual()
+        lf = _LOGFONTW()
+        lf.lfHeight = -max(8, int(round(abs(int(f["size"])) * w.winfo_fpixels("1i") / 72.0))) if int(f["size"]) > 0 else int(f["size"])
+        lf.lfWeight = 700 if f.get("weight") == "bold" else 400
+        lf.lfCharSet = 1                                  # DEFAULT_CHARSET
+        lf.lfFaceName = str(f["family"])[:31]
+        imm = ctypes.windll.imm32
+        imm.ImmGetContext.restype = ctypes.c_void_p
+        imm.ImmGetContext.argtypes = [ctypes.c_void_p]
+        imm.ImmSetCompositionFontW.argtypes = [ctypes.c_void_p, ctypes.POINTER(_LOGFONTW)]
+        imm.ImmReleaseContext.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        hwnd = w.winfo_id()
+        himc = imm.ImmGetContext(hwnd)
+        if not himc:
+            return False
+        try:
+            return bool(imm.ImmSetCompositionFontW(himc, ctypes.byref(lf)))
+        finally:
+            imm.ImmReleaseContext(hwnd, himc)
+    except Exception:
+        return False
+
+
+def memo_fs(m):
+    try:
+        return max(FS_MIN, min(FS_MAX, int(m.get("fs") or FS_DEF)))
+    except Exception:
+        return FS_DEF
+
+
 def memo_alpha(m):
     try:
         return max(ALPHA_MIN, min(1.0, float(m.get("alpha", 1.0))))
@@ -48,7 +94,7 @@ def memo_alpha(m):
 def new_memo(text="", kind="text"):
     return {"id": uuid.uuid4().hex[:10], "title": "", "kind": kind, "text": text, "items": [],
             "alarm": None, "fired": False, "open": False, "x": None, "y": None,
-            "color": "yellow", "alpha": 1.0, "w": None, "h": None}
+            "color": "yellow", "alpha": 1.0, "w": None, "h": None, "fs": FS_DEF}
 
 
 # ── 알림 시각 ──
@@ -457,6 +503,17 @@ class PostIt(tk.Toplevel):
     # 글자 받기: 테두리 없는 창은 누를 때 한 번 앞으로 가져와야 키보드가 들어온다 (포커스 이벤트 안에서는 옮기지 않는다)
     def _grab(self, w):
         w.bind("<Button-1>", lambda e: self._focus(w), add="+")
+        w.bind("<FocusIn>", lambda e: ime_font(w), add="+")             # 입력 중인 글자 창 크기를 칸 글씨에 맞춘다
+        w.bind("<KeyPress>", lambda e: self._ime_once(w), add="+")
+
+    def _ime_once(self, w):
+        try:
+            key = (w.winfo_id(), str(w.cget("font")))
+        except Exception:
+            return
+        if getattr(self, "_ime_key", None) != key:                       # 같은 칸·같은 글씨면 한 번만
+            self._ime_key = key
+            ime_font(w)
 
     def _focus(self, w):
         if self.focus_get() is not w:
@@ -510,26 +567,57 @@ class PostIt(tk.Toplevel):
                           highlightthickness=0, padx=px(4), pady=px(2))
             box.pack(fill="both", expand=True)
             box.bind("<MouseWheel>", lambda e: box.yview_scroll(-1 if e.delta > 0 else 1, "units"))
+            box.bind("<Control-MouseWheel>", self._fs_wheel)
             for i, it in enumerate(self.m.get("items") or []):
                 box.window_create("end", window=self._row(box, i, it))
                 box.insert("end", "\n")
             box.configure(state="disabled")
-            self.add_e = e = tk.Entry(self.body, relief="flat", bd=0, bg=c["field"], fg=INK, font=self.font(9), insertbackground=INK)
+            self.add_e = e = tk.Entry(self.body, relief="flat", bd=0, bg=c["field"], fg=INK, font=self.font(memo_fs(self.m)), insertbackground=INK)
             e.pack(fill="x", padx=px(6), pady=(0, px(8)), ipady=px(3))
             self._hint(e, "＋ 항목 추가 (적고 Enter)", lambda t: None)
             e.bind("<Return>", lambda ev: self.add_item())
             self.after(50, lambda: box.winfo_exists() and box.see("end"))
         else:
             self.mode_b.configure(text="체크리스트")
-            t = tk.Text(self.body, bg=c["bg"], relief="flat", bd=0, wrap="word", font=self.font(9), undo=True,
+            t = tk.Text(self.body, bg=c["bg"], relief="flat", bd=0, wrap="word", font=self.font(memo_fs(self.m)), undo=True,
                         highlightthickness=0, padx=px(7), pady=px(5), insertbackground=INK)
             t.pack(fill="both", expand=True)
             t.insert("1.0", self.m.get("text") or "")
             t.edit_reset()
             t.bind("<KeyRelease>", lambda ev: self._set("text", t.get("1.0", "end-1c")))
             t.bind("<FocusOut>", lambda ev: (self._set("text", t.get("1.0", "end-1c")), self.strip.changed(now=True)))
+            t.bind("<Control-MouseWheel>", self._fs_wheel)
             self._grab(t)
             self.text_w = t
+
+    # 글씨 크기: 🎨 창의 슬라이더 · 글 위에서 Ctrl+마우스 휠
+    def _wrap(self):
+        w = self.winfo_width()
+        if w < 100:
+            w = int(self.m.get("w") or self.px(250))
+        return max(self.px(100), w - self.px(90))
+
+    def _fs_wheel(self, e):
+        self.set_fs(memo_fs(self.m) + (1 if e.delta > 0 else -1))
+        return "break"
+
+    def set_fs(self, v):
+        v = max(FS_MIN, min(FS_MAX, int(v)))
+        if v == memo_fs(self.m) and self.m.get("fs") == v:
+            return
+        self.m["fs"] = v
+        self.strip.changed()
+        if self.m.get("kind") != "check" and hasattr(self, "text_w"):
+            self.text_w.configure(font=self.font(v))            # 글칸은 다시 만들지 않는다 (커서·되돌리기 유지)
+            ime_font(self.text_w)
+        else:
+            self.build_body()
+        sc = getattr(self, "_fs_scale", None)
+        try:
+            if sc is not None and sc.winfo_exists() and int(sc.get()) != v:
+                sc.set(v)
+        except Exception:
+            pass
 
     def _row(self, box, i, it):
         px = self.px
@@ -539,8 +627,8 @@ class PostIt(tk.Toplevel):
         cb = tk.Checkbutton(f, variable=v, bg=bg, activebackground=bg, bd=0, highlightthickness=0, cursor="hand2",
                             command=lambda: self.check(i, v.get()))
         cb.pack(side="left")
-        lb = tk.Label(f, text=it.get("t", ""), bg=bg, fg=DONE if it.get("done") else INK, font=self.font(9), anchor="w",
-                      cursor="hand2", wraplength=px(170), justify="left")
+        lb = tk.Label(f, text=it.get("t", ""), bg=bg, fg=DONE if it.get("done") else INK, font=self.font(memo_fs(self.m)), anchor="w",
+                      cursor="hand2", wraplength=self._wrap(), justify="left")
         lb.pack(side="left")
         lb.bind("<Button-1>", lambda e: (v.set(not v.get()), self.check(i, v.get())))
         x = tk.Label(f, text="✕", bg=bg, fg=self.c["edge"], font=self.font(7), cursor="hand2", padx=px(3))
@@ -697,6 +785,8 @@ class PostIt(tk.Toplevel):
     def _rs_end(self):
         self.m["w"], self.m["h"] = self.winfo_width(), self.winfo_height()
         self.save_pos()
+        if self.m.get("kind") == "check":
+            self.build_body()
 
     # 색·투명도
     def apply_theme(self):
@@ -771,6 +861,12 @@ class PostIt(tk.Toplevel):
             self.strip.changed()
 
         sc.configure(command=set_alpha)
+        tk.Label(d, text="글씨 크기  (글 위에서 Ctrl+마우스 휠로도 바꿔요)", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(8), 0))
+        fs = self._fs_scale = tk.Scale(d, from_=FS_MIN, to=FS_MAX, orient="horizontal", length=px(220), bg=NB, highlightthickness=0,
+                                       troughcolor="#dcdcdc", showvalue=True, resolution=1, font=self.font(8))
+        fs.set(memo_fs(self.m))
+        fs.pack(padx=px(12))
+        fs.configure(command=lambda v: self.set_fs(int(float(v))))
         tk.Button(d, text="닫기", font=self.font(9), relief="groove", padx=px(10), command=d.destroy).pack(pady=(px(4), px(10)))
         d.update_idletasks()
         d.geometry("+%d+%d" % (self.winfo_rootx() + px(10), self.winfo_rooty() + px(30)))
