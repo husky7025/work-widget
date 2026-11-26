@@ -227,12 +227,50 @@ def shown_within(hwnd, top):
     return False
 
 
+LOGIN_CHECKS = ("자동으로 로그인", "오프라인으로 로그인", "PASSWORD 로그인")   # 로그인 화면에만 있는 체크칸 글자
+
+
 def on_login_screen(main_hwnd):
-    """로그인 화면이면 True: '자동으로 로그인하기' 체크박스가 보인다. (메인 창이 트레이에 숨어 있어도 판단)"""
+    """로그인 화면이면 True: 로그인 화면의 체크칸이 하나라도 보인다. (메인 창이 트레이에 숨어 있어도 판단)"""
     for h, c, t in children(main_hwnd):
-        if c.startswith("TOnUniCheckBox") and "자동으로 로그인" in t and shown_within(h, main_hwnd):
+        if c.startswith("TOnUniCheckBox") and any(k in t for k in LOGIN_CHECKS) and shown_within(h, main_hwnd):
             return True
     return False
+
+
+def on_main_screen(main_hwnd):
+    """로그인된 본 화면(대화·조직도 탭)이 보이면 True. '로그인 화면이 아님'만으로는 로그인됐다고 보지 않는다."""
+    return any(c == "TPageControl" and shown_within(h, main_hwnd) for h, c, _t in children(main_hwnd))
+
+
+def screen_report():
+    """판별이 틀렸을 때 원인을 찾기 위한 화면 구조 요약. 창·칸 '종류'와 로그인 체크칸 글자만 담는다 (이름·대화·입력값 없음)."""
+    tops = []
+
+    def cb(hwnd, _):
+        if user32.IsWindowVisible(hwnd) and exe_of(hwnd) == EXE_NAME:
+            r = rect_of(hwnd)
+            tops.append("%s %dx%d" % (class_of(hwnd).replace(".UnicodeClass", ""), r.right - r.left, r.bottom - r.top))
+        return True
+
+    user32.EnumWindows(EnumProc(cb), 0)
+    lines = ["보이는 창: " + (", ".join(tops) or "없음")]
+    m = find_main(include_hidden=True)
+    if not m:
+        return lines + ["메인 창 없음"]
+    r = rect_of(m)
+    checks, shown = [], {}
+    for h, c, t in children(m):
+        on = shown_within(h, m)
+        if "CheckBox" in c and "로그인" in t:
+            checks.append("%s=%d" % (t[:20], on))
+        if on:
+            name = c.replace(".UnicodeClass", "")
+            shown[name] = shown.get(name, 0) + 1
+    lines.append("메인 %s %dx%d 체크칸[%s]" % ("보임" if user32.IsWindowVisible(m) else "숨김",
+                                            r.right - r.left, r.bottom - r.top, ", ".join(checks) or "없음"))
+    lines.append("보이는 칸: " + (", ".join("%s %d" % kv for kv in sorted(shown.items())) or "없음"))
+    return lines
 
 
 def bring_up(main_hwnd):
@@ -313,24 +351,26 @@ def start_and_open_cert_dialog():
     main_hwnd = find_main()
     if main_hwnd or process_running():
         # 이미 켜져 있거나 윈도우 시작과 함께 막 켜지는 중이다 — 두 번째로 띄우지 않고 창을 기다린다.
-        # 로그인 화면이면(트레이에 숨어 있어도) 창을 꺼내 진행, 창이 6초 넘게 있는데 로그인 화면이 아니면 이미 로그인됨,
-        # 20초 동안 메인 창 자체가 없으면 이미 로그인된 것으로 본다.
-        t_end, first_seen, seen = time.time() + 20, None, False
+        # 로그인 화면이면(트레이에 숨어 있어도) 창을 꺼내 진행, 본 화면이 6초 동안 계속 보이면 이미 로그인됨.
+        # 20초 동안 둘 다 확인하지 못하면 로그인됐다고 하지 않고 모른다고 알린다.
+        t_end, main_since, seen = time.time() + 20, None, False
         while time.time() < t_end:
             main_hwnd = find_main(include_hidden=True)
-            if main_hwnd:
-                first_seen = first_seen or time.time()
-                if on_login_screen(main_hwnd):
-                    if not user32.IsWindowVisible(main_hwnd):
-                        print("트레이에 숨은 DJE Talk 로그인 창을 꺼냅니다.")
-                        bring_up(main_hwnd)
-                    seen = True
-                    break
-                if time.time() - first_seen > 6:
-                    break
+            if main_hwnd and on_login_screen(main_hwnd):
+                if not user32.IsWindowVisible(main_hwnd):
+                    print("트레이에 숨은 DJE Talk 로그인 창을 꺼냅니다.")
+                    bring_up(main_hwnd)
+                seen = True
+                break
+            if main_hwnd and on_main_screen(main_hwnd):
+                main_since = main_since or time.time()
+                if time.time() - main_since > 6:
+                    return "LOGGED_IN"
+            else:
+                main_since = None
             time.sleep(0.2)
         if not seen:
-            return "LOGGED_IN"
+            return "UNKNOWN"
     else:
         exe = find_exe()
         if not exe:
@@ -380,10 +420,19 @@ def main():
     dlg = start_and_open_cert_dialog()
     if dlg == "NO_EXE":
         return 7
+    if dlg in ("LAYOUT", "SHOWN", "UNKNOWN", "LOGGED_IN"):
+        try:                                        # 위젯이 «DIAG» 줄을 문제 해결용 기록에 남긴다
+            for line in screen_report():
+                print("DIAG " + line[:260])
+        except Exception as e:
+            print("DIAG 화면 확인 실패 " + type(e).__name__)
     if dlg == "LAYOUT":
         return 9
     if dlg == "SHOWN":          # 이유는 위에서 이미 알렸다
         return 1
+    if dlg == "UNKNOWN":
+        print("❌ DJE Talk 화면을 알아보지 못했어요. DJE Talk 창을 열고 다시 눌러 보세요.")
+        return 10
     if dlg == "LOGGED_IN":
         print("✅ DJE 메신저에 로그인했습니다 (이미 로그인돼 있었어요)")
         return 0

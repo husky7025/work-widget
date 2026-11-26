@@ -2117,6 +2117,9 @@ class Widget:
                 for line in p.stdout:
                     line = line.strip()
                     tail.append(line)
+                    if line.startswith("DIAG "):                # 화면 판별 근거 — 화면에는 안 띄우고 문제 해결용 기록에만
+                        K.log_line("업무위젯 DJE화면 " + line[5:])
+                        continue
                     if line.startswith("JEOPSU ") and line[7:].strip().isdigit():     # 기관접수대기 화면을 열며 읽은 건수
                         self.root.after(0, self.show_jeopsu, int(line[7:].strip()), "", False)
                     if done in line:
