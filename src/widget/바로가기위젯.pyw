@@ -970,16 +970,31 @@ class Widget:
         self.memo_strip = None
         if MEMO is None:
             return
-        memos = st.get("memos") if isinstance(st.get("memos"), list) else []
-        if not memos and str(st.get("memo") or "").strip():           # 예전 한 줄 메모 → 첫 포스트잇
-            memos = [MEMO.new_memo(text=str(st.get("memo")).strip())]
-        self.memo_strip = MEMO.MemoStrip(self.root, PANEL, px, F, memos, save=lambda ms: K.save_state(memos=ms),
+        has_list = isinstance(st.get("memos"), list)
+        memos = st.get("memos") if has_list else []
+        legacy = str(st.get("memo") or "").strip()                    # 예전 한 줄 메모 (이전 버전)
+        if legacy and not has_list:                                   # 메모 목록을 한 번도 저장한 적 없을 때만 첫 포스트잇으로 옮긴다
+            memos = [MEMO.new_memo(text=legacy)]
+        if legacy:                                                    # 옮겼든 이미 지웠든, 예전 칸은 비운다 (안 그러면 지운 메모가 켤 때마다 되살아난다)
+            try:
+                K.save_state(memos=memos, memo="")
+            except Exception as e:
+                K.log_line("업무위젯 예전 메모 정리 오류 %r" % e)
+        self.memo_strip = MEMO.MemoStrip(self.root, PANEL, px, F, memos, save=self.save_memos,
                                          notify=lambda t, x: self.show_notice(t, x), topmost=lambda: self.pinned)
         self.memo_strip.update_idletasks()                            # 높이를 미리 재 둔다 (위젯 높이 계산용)
         self.memo_h = self.memo_strip.winfo_reqheight()
         self.apply_memo(save=False)
         if self.memo_var.get():
             self.root.after(800, self.memo_strip.reopen)              # 열어 둔 채로 끈 포스트잇은 다시 연다
+
+    def save_memos(self, ms):
+        """메모를 위젯 상태 파일에 저장 (이 PC에만). 실패하면 기록에 남긴다 — 조용히 넘기면 메모가 사라진 줄 모른다."""
+        try:
+            K.save_state(memos=ms, memo="")
+        except Exception as e:
+            K.log_line("업무위젯 메모 저장 오류 %r" % e)
+            raise
 
     def memo_extra(self):
         return self.memo_h + px(6) if self.memo_strip is not None and self.memo_var.get() else 0

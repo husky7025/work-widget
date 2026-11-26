@@ -98,8 +98,61 @@ def round_corners(win, radius):
 
 
 def make_round(win, radius):
-    win.bind("<Configure>", lambda e: round_corners(win, radius) if e.widget is win else None, add="+")
-    win.after(60, lambda: win.winfo_exists() and round_corners(win, radius))
+    """창이 처음 뜰 때와 크기가 바뀔 때 둥근 모양을 입힌다.
+    크기 신호(<Configure>) 안에서 바로 입히면 창이 움직이던 도중에 끼어들어 (0,0)으로 되돌아가므로,
+    잠깐 미뤘다가 한 번만 입힌다."""
+    st = {"job": None}
+
+    def run():
+        st["job"] = None
+        if win.winfo_exists():
+            round_corners(win, radius)
+
+    def later(e=None):
+        if e is not None and e.widget is not win:
+            return
+        if st["job"] is not None:
+            try:
+                win.after_cancel(st["job"])
+            except Exception:
+                pass
+        st["job"] = win.after(25, run)
+
+    win.bind("<Configure>", later, add="+")
+    later()
+
+
+# ── 모니터가 여럿일 때: 위젯이 있는 모니터의 작업 영역 · 전체(가상) 화면 ──
+class _MONITORINFO(ctypes.Structure):
+    _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", ctypes.c_long * 4), ("rcWork", ctypes.c_long * 4),
+                ("dwFlags", ctypes.c_ulong)]
+
+
+def virtual_area(widget):
+    """모든 모니터를 합친 화면 (left, top, right, bottom). 왼쪽·위쪽 모니터는 좌표가 음수일 수 있다."""
+    return (widget.winfo_vrootx(), widget.winfo_vrooty(),
+            widget.winfo_vrootx() + widget.winfo_vrootwidth(), widget.winfo_vrooty() + widget.winfo_vrootheight())
+
+
+def screen_area(widget):
+    """widget 이 놓인 모니터의 작업 영역 (left, top, right, bottom) — 작업표시줄은 뺀다. 못 구하면 주 화면 전체."""
+    try:
+        u = ctypes.windll.user32
+        u.GetAncestor.restype = ctypes.c_void_p
+        u.GetAncestor.argtypes = [ctypes.c_void_p, ctypes.c_uint]
+        u.MonitorFromWindow.restype = ctypes.c_void_p
+        u.MonitorFromWindow.argtypes = [ctypes.c_void_p, ctypes.c_ulong]
+        u.GetMonitorInfoW.argtypes = [ctypes.c_void_p, ctypes.c_void_p]
+        hwnd = u.GetAncestor(widget.winfo_toplevel().winfo_id(), 2)
+        h = u.MonitorFromWindow(hwnd, 2) if hwnd else None          # MONITOR_DEFAULTTONEAREST
+        mi = _MONITORINFO()
+        mi.cbSize = ctypes.sizeof(mi)
+        if h and u.GetMonitorInfoW(h, ctypes.byref(mi)):
+            r = mi.rcWork
+            return r[0], r[1], r[2], r[3]
+    except Exception:
+        pass
+    return 0, 0, widget.winfo_screenwidth(), widget.winfo_screenheight()
 
 
 def memo_fs(m):
@@ -428,9 +481,13 @@ def card_show(d, px, at=None, y_div=2, off=0, min_w=0):
     """카드 창을 띄운다: at=(x, y) 이면 그 자리에, 아니면 화면 가운데(위에서 1/y_div 높이)에. 둥근 모서리도 여기서 입힌다."""
     d.update_idletasks()
     w, h = max(min_w, d.winfo_reqwidth()), d.winfo_reqheight()
-    sw, sh = d.winfo_screenwidth(), d.winfo_screenheight()
-    x, y = at if at else ((sw - w) // 2 + off, (sh - h) // y_div + off)
-    x, y = max(0, min(int(x), sw - w)), max(0, min(int(y), sh - h - px(40)))
+    if at:                                           # 정해 준 자리: 전체 화면 안에서만 (왼쪽 모니터의 음수 좌표도 그대로)
+        l, t, r, bt = virtual_area(d)
+        x, y = at
+    else:                                            # 가운데: 위젯이 있는 모니터의 가운데
+        l, t, r, bt = screen_area(d.master)
+        x, y = l + (r - l - w) // 2 + off, t + (bt - t - h) // y_div + off
+    x, y = max(l, min(int(x), r - w)), max(t, min(int(y), bt - h - px(40) if at else bt - h))
     d.geometry(("%dx%d+%d+%d" % (w, h, x, y)) if min_w else ("+%d+%d" % (x, y)))
     make_round(d, px(12))
     d.lift()
@@ -511,7 +568,8 @@ class PostIt(tk.Toplevel):
         except Exception:
             pass
         self.configure(bg=c["edge"])
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        vl, vt, vr, vb = virtual_area(self)
+        sw, sh = vr - vl, vb - vt
         try:
             W, H = int(m.get("w") or px(250)), int(m.get("h") or px(230))
         except Exception:
@@ -522,10 +580,10 @@ class PostIt(tk.Toplevel):
         if x is None or y is None:
             step = W + px(8)                                   # 여러 개면 위젯 왼쪽으로 나란히
             x = root.winfo_rootx() - (nth + 1) * step
-            if x < 0:
+            if x < vl:
                 x = root.winfo_rootx() + root.winfo_width() + px(8) + nth * step
             y = root.winfo_rooty()
-        x, y = max(0, min(int(x), sw - W)), max(0, min(int(y), sh - H - px(40)))
+        x, y = max(vl, min(int(x), vr - W)), max(vt, min(int(y), vb - H - px(40)))
         self.geometry("%dx%d+%d+%d" % (W, H, x, y))
         make_round(self, px(12))
         self.inner = inner = tk.Frame(self, bg=c["bg"])
@@ -849,18 +907,18 @@ class PostIt(tk.Toplevel):
 
     def _rs_move(self, e):
         px0, py0, x0, y0, w0, h0, mode = self._rs
-        sw, sh = self.winfo_screenwidth(), self.winfo_screenheight()
+        vl, vt, vr, vb = virtual_area(self)
         dx, dy = e.x_root - px0, e.y_root - py0
         x, y, w, h = x0, y0, w0, h0
         if "e" in mode:
-            w = max(self.min_w, min(w0 + dx, sw - x0))
+            w = max(self.min_w, min(w0 + dx, vr - x0))
         if "w" in mode:                                  # 왼쪽 끝을 끈다: 오른쪽 끝은 그대로
-            w = max(self.min_w, min(w0 - dx, x0 + w0))
+            w = max(self.min_w, min(w0 - dx, x0 + w0 - vl))
             x = x0 + w0 - w
         if "s" in mode:
-            h = max(self.min_h, min(h0 + dy, sh - y0))
+            h = max(self.min_h, min(h0 + dy, vb - y0))
         if "n" in mode:                                  # 위쪽 끝을 끈다: 아래 끝은 그대로
-            h = max(self.min_h, min(h0 - dy, y0 + h0))
+            h = max(self.min_h, min(h0 - dy, y0 + h0 - vt))
             y = y0 + h0 - h
         self.geometry("%dx%d+%d+%d" % (w, h, x, y))
 
