@@ -112,7 +112,7 @@ def main():
         if not W.edufine_session_ok(page, urls):
             W.edufine_login(E, ctx, page, urls)
         print("📂  학교회계 → 사업담당 → 품의/정산 → 품의등록", flush=True)
-        page.goto(E.KLEF, wait_until="domcontentloaded")
+        W.goto(page, E.KLEF, wait_until="domcontentloaded")   # 로그인 직후 이동과 겹치면 다시 시도
         page.wait_for_timeout(5000)
         for _ in range(3):
             E.close_modals(page)

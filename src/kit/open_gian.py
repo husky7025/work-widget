@@ -81,7 +81,7 @@ def main():
         if not W.edufine_session_ok(page, urls):
             W.edufine_login(E, ctx, page, urls)        # 업무포털 → 인증서 → 에듀파인 (이미 로그인돼 있으면 건너뜀)
         print("📂  문서관리 → 기안 → 공용서식", flush=True)
-        page.goto(E.KLEF, wait_until="domcontentloaded")
+        W.goto(page, E.KLEF, wait_until="domcontentloaded")   # 로그인 직후 이동과 겹치면 다시 시도
         page.wait_for_timeout(5000)
         for _ in range(3):
             E.close_modals(page)

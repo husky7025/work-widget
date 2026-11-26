@@ -189,7 +189,7 @@ def edufine_page(ctx, W, E):
         _, urls = W.edufine_urls()
         if not W.edufine_session_ok(page, urls):
             W.edufine_login(E, ctx, page, urls)
-        page.goto(E.KLEF, wait_until="domcontentloaded")
+        W.goto(page, E.KLEF, wait_until="domcontentloaded")   # 로그인 직후 이동과 겹치면 다시 시도
     for _ in range(60):
         try:
             if page.evaluate(EDU_APP_JS):
