@@ -2139,19 +2139,16 @@ class Widget:
         old = getattr(self, "fill_pop", None)
         if old is not None and old.winfo_exists():
             old.destroy()
-        top = tk.Toplevel(self.root)
-        self.fill_pop = top
-        top.title("업무위젯 — 나이스 칸 채우기")
-        top.configure(bg=PANEL)
-        top.attributes("-topmost", True)
-        top.resizable(False, False)
-        try:
-            top.iconbitmap(str(HERE0 / "업무위젯.ico"))
-        except Exception:
-            pass
         acc = FILL_TONE[0] if ok else "#c82014"
-        tk.Frame(top, bg=acc, height=px(6)).pack(fill="x")
-        body = tk.Frame(top, bg=PANEL)
+        top, inner, is_card = self.card("업무위젯 — 나이스 칸 채우기", accent=acc)
+        self.fill_pop = top
+        if not is_card:
+            try:
+                top.iconbitmap(str(HERE0 / "업무위젯.ico"))
+            except Exception:
+                pass
+        tk.Frame(inner, bg=acc, height=px(6)).pack(fill="x")
+        body = tk.Frame(inner, bg=PANEL)
         body.pack(padx=px(22), pady=(px(14), px(6)))
         head = "✎  나이스에 칸을 다 채웠어요" if ok else "⚠️  칸을 다 채우지 못했어요"
         tk.Label(body, text=head, bg=PANEL, fg=acc, font=F(13, True)).pack(anchor="w")
@@ -2169,14 +2166,11 @@ class Widget:
             steps = ("멈춘 까닭: %s\n\n나이스 창에 채워진 데까지 남아 있으면 거기서 마저 채우거나, 창을 닫고 다시 해 보세요."
                      % (err or "알 수 없음 — ⚙ → 도움말 → 문제 해결용 기록 복사"))
         tk.Label(body, text=steps, bg=PANEL, fg="#4b4b4b", font=F(9), justify="left", wraplength=px(380)).pack(anchor="w", pady=(px(10), 0))
-        b = tk.Button(top, text="확인", font=F(10, True), bg=acc, fg="white", relief="flat", padx=px(24), cursor="hand2", command=top.destroy)
+        b = tk.Button(inner, text="확인", font=F(10, True), bg=acc, fg="white", relief="flat", padx=px(24), cursor="hand2", command=top.destroy)
         b.pack(pady=(px(6), px(16)))
         top.bind("<Return>", lambda e: top.destroy())
         top.bind("<Escape>", lambda e: top.destroy())
-        top.update_idletasks()
-        w, h = top.winfo_reqwidth(), top.winfo_reqheight()
-        top.geometry("+%d+%d" % ((top.winfo_screenwidth() - w) // 2, (top.winfo_screenheight() - h) // 3))
-        top.lift()
+        self.card_show(top, is_card, 3)
         top.focus_force()
         b.focus_set()
         top.bell()
@@ -2294,6 +2288,48 @@ class Widget:
         self.paint_sanctn()
         self.say("결재대기 반짝임을 켰어요" if self.glow_on else "결재대기 반짝임을 껐어요", "#00754A" if self.glow_on else "#5c5c5c")
 
+    CARD_P = {"bg": "#f2f0eb", "head": "#e4e0d8", "edge": "#cfc9bd", "field": "#ffffff"}      # 위젯 판(PANEL) 색의 카드
+
+    def card(self, title, accent=None, warn=False, master=None):
+        """작은 알림·확인 창의 바탕 — 둥근 카드(postit.card_window). → (창, 안쪽 틀, 카드인가). 모듈이 없으면 보통 창."""
+        master = master or self.root
+        if MEMO is not None:
+            try:
+                p = dict(self.CARD_P)
+                if accent:
+                    p["edge"] = accent
+                d, inner = MEMO.card_window(master, px, F, title, p, warn)
+                return d, inner, True
+            except Exception as e:
+                K.log_line("업무위젯 카드 창 오류 %r — 보통 창으로 대신" % e)
+        d = tk.Toplevel(master)
+        d.title(title)
+        d.configure(bg=PANEL)
+        d.attributes("-topmost", True)
+        d.resizable(False, False)
+        return d, d, False
+
+    def card_show(self, d, is_card, y_div=2):
+        """카드는 화면 가운데(위에서 1/y_div)에 둥근 모서리로, 보통 창이면 같은 자리에 그냥 띄운다"""
+        if is_card:
+            MEMO.card_show(d, px, y_div=y_div)
+            return
+        d.update_idletasks()
+        w, h = d.winfo_reqwidth(), d.winfo_reqheight()
+        d.geometry("+%d+%d" % ((d.winfo_screenwidth() - w) // 2, (d.winfo_screenheight() - h) // y_div))
+        d.lift()
+
+    def ask(self, title, message, parent=None, yes="예", no="아니오"):
+        """예/아니오 확인 — 둥근 카드 확인 창 (윈도우 기본 확인창 대신). 예 → True"""
+        parent = parent or self.root
+        if MEMO is not None:
+            try:
+                return MEMO.ask_yesno(parent, px, F, title, message, yes=yes, no=no, p=self.CARD_P)
+            except Exception as e:
+                K.log_line("업무위젯 확인 창 오류 %r — 기본 확인창으로 대신" % e)
+        from tkinter import messagebox
+        return messagebox.askyesno(title, message, parent=parent)
+
     def show_notice(self, title, text="", warn=False):
         """위젯의 모든 알림은 여기로: 화면 가운데에 «업무위젯 알림» 창을 띄운다 (윈도우 풍선 알림은 앱 이름이 Python 으로 나온다).
         알림 창을 못 띄울 때만 트레이 풍선으로 대신한다. 띄웠으면 True."""
@@ -2396,8 +2432,7 @@ class Widget:
         if self.busy or self.dje_busy or self.sanctn_busy or self.jeopsu_busy or self.upd_busy or self.folded or self.mini is not None:
             self.root.after(60_000, self.ask_lite)
             return
-        from tkinter import messagebox
-        yes = messagebox.askyesno(
+        yes = self.ask(
             "업무위젯 — 가벼운 모드",
             "이 PC는 메모리나 CPU가 넉넉하지 않아 보여요.\n\n"
             "가벼운 모드로 바꿀까요?\n"
@@ -2405,7 +2440,7 @@ class Widget:
             " · 결재대기 반짝임, 서서히 사라지기 끔\n"
             " · 결재대기·기관접수 숫자는 자동으로 읽지 않고\n"
             "   칸을 오른쪽 클릭할 때만 읽어요\n\n"
-            "나중에 ⚙ → 화면 → 가벼운 모드 에서 언제든 바꿀 수 있어요.", parent=self.root)
+            "나중에 ⚙ → 화면 → 가벼운 모드 에서 언제든 바꿀 수 있어요.", parent=self.root, yes="가벼운 모드로", no="그대로 쓸게요")
         if yes:
             self.set_lite(True)
         else:
@@ -2670,6 +2705,11 @@ class Widget:
                 for w in (pop, inner, pop._t, pop._s):
                     w.bind("<Button-1>", lambda e: self.close_upd_popup())
                 self._upd_pop = pop
+                if MEMO is not None:
+                    try:
+                        MEMO.make_round(pop, px(12))
+                    except Exception:
+                        pass
             pop.configure(bg=color)
             pop._t.configure(text=title, fg=color)
             pop._s.configure(text=sub)
@@ -3041,9 +3081,8 @@ class Widget:
         if time.monotonic() - getattr(self, "_pop_t", 0) < 0.4:
             return
         try:
-            from tkinter import messagebox
             parent = self.bubble if self.folded else self.root     # 접힌 동안 본 창은 숨어 있으니 단추 위에 묻는다
-            if not messagebox.askyesno("업무위젯", "위젯을 완전히 끝낼까요?\n(작게 접으려면 ✕, 트레이로 내리려면 – 를 누르세요)", parent=parent):
+            if not self.ask("업무위젯", "위젯을 완전히 끝낼까요?\n(작게 접으려면 ✕, 트레이로 내리려면 – 를 누르세요)", parent=parent, yes="끝내기", no="취소"):
                 return
         except Exception:
             pass

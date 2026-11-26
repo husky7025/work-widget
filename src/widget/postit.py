@@ -327,7 +327,8 @@ class MemoStrip(tk.Frame):
         m = self.find(mid)
         if m is None:
             return
-        if not messagebox.askyesno("메모 지우기", "«%s» 메모를 지울까요?\n지우면 되살릴 수 없어요." % memo_name(m, 20), parent=parent or self):
+        if not ask_yesno(parent or self, self.px, self.font, "🗑 메모 지우기", "«%s» 메모를 지울까요?\n지우면 되살릴 수 없어요." % memo_name(m, 20),
+                         yes="지우기", no="취소", p=pal(m), warn=True):
             return
         w = self.wins.pop(mid, None)
         if w is not None:
@@ -386,25 +387,58 @@ class MemoStrip(tk.Frame):
         notice_popup(self, self.px, self.font, title, "%s 에 맞춘 알림이에요" % alarm_label(dt), body, pal(m))
 
 
-# ── 화면 가운데 «업무위젯 알림» 창 (윈도우 풍선 알림은 앱 이름이 Python 으로 나와서 쓰지 않는다) ──
+# ── 둥근 카드 창: 알림·확인·작은 입력 창의 공통 틀 (윈도우 풍선 알림은 앱 이름이 Python 으로 나와서 쓰지 않는다) ──
+NEUTRAL = {"name": "기본", "bg": "#f6f6f6", "head": "#e6e6e6", "edge": "#cfcfcf", "field": "#ffffff"}
 _LIVE_NOTICES = []
 
 
-def notice_popup(master, px, font, title, sub="", body=(), p=None, warn=False):
+def card_window(master, px, font, title, p=None, warn=False):
+    """테두리 없는 둥근 카드 창을 만든다 → (창, 안쪽 틀). 머리줄(제목·✕)을 끌면 옮겨진다.
+    내용은 안쪽 틀에 붙이고 card_show 로 띄운다."""
     p = p or PALETTE["yellow"]
     d = tk.Toplevel(master)
     d.overrideredirect(True)
     d.attributes("-topmost", True)
-    edge = "#c82014" if warn else p["edge"]
-    d.configure(bg=edge)
+    d.configure(bg="#c82014" if warn else p["edge"])
     inner = tk.Frame(d, bg=p["bg"])
     inner.pack(fill="both", expand=True, padx=2, pady=2)
-    head = tk.Frame(inner, bg=p["head"])
+    head = tk.Frame(inner, bg=p["head"], cursor="fleur")
     head.pack(fill="x")
-    tk.Label(head, text="🔔 업무위젯 알림", bg=p["head"], fg=INK, font=font(9, True)).pack(side="left", padx=px(10), pady=px(6))
+    lb = tk.Label(head, text=title, bg=p["head"], fg=INK, font=font(9, True), cursor="fleur")
+    lb.pack(side="left", padx=px(10), pady=px(6))
     x = tk.Label(head, text="✕", bg=p["head"], fg="#5c5c5c", font=font(9), cursor="hand2", padx=px(10))
     x.pack(side="right")
     x.bind("<Button-1>", lambda e: d.destroy())
+    pos = {}
+
+    def start(e):
+        pos["d"] = (e.x_root - d.winfo_x(), e.y_root - d.winfo_y())
+
+    def move(e):
+        if "d" in pos:
+            d.geometry("+%d+%d" % (e.x_root - pos["d"][0], e.y_root - pos["d"][1]))
+
+    for w in (head, lb):
+        w.bind("<ButtonPress-1>", start)
+        w.bind("<B1-Motion>", move)
+    return d, inner
+
+
+def card_show(d, px, at=None, y_div=2, off=0, min_w=0):
+    """카드 창을 띄운다: at=(x, y) 이면 그 자리에, 아니면 화면 가운데(위에서 1/y_div 높이)에. 둥근 모서리도 여기서 입힌다."""
+    d.update_idletasks()
+    w, h = max(min_w, d.winfo_reqwidth()), d.winfo_reqheight()
+    sw, sh = d.winfo_screenwidth(), d.winfo_screenheight()
+    x, y = at if at else ((sw - w) // 2 + off, (sh - h) // y_div + off)
+    x, y = max(0, min(int(x), sw - w)), max(0, min(int(y), sh - h - px(40)))
+    d.geometry(("%dx%d+%d+%d" % (w, h, x, y)) if min_w else ("+%d+%d" % (x, y)))
+    make_round(d, px(12))
+    d.lift()
+
+
+def notice_popup(master, px, font, title, sub="", body=(), p=None, warn=False):
+    p = p or PALETTE["yellow"]
+    d, inner = card_window(master, px, font, "🔔 업무위젯 알림", p, warn)
     tk.Label(inner, text=title, bg=p["bg"], fg="#c82014" if warn else INK, font=font(13, True), wraplength=px(340),
              justify="left").pack(anchor="w", padx=px(16), pady=(px(14), px(2)))
     if sub:
@@ -417,20 +451,46 @@ def notice_popup(master, px, font, title, sub="", body=(), p=None, warn=False):
                  ).pack(anchor="w", padx=px(16), pady=(px(8), 0))
     tk.Button(inner, text="확인", font=font(10, True), relief="groove", bg="#00754A", fg="#ffffff", padx=px(22),
               command=d.destroy).pack(pady=(px(14), px(14)))
-    d.update_idletasks()
-    w, h = max(px(320), d.winfo_reqwidth()), d.winfo_reqheight()
-    sw, sh = d.winfo_screenwidth(), d.winfo_screenheight()
     live = [q for q in _LIVE_NOTICES if q.winfo_exists()]
-    off = len(live) * px(28)                           # 여러 개가 한꺼번에 울리면 조금씩 비껴 쌓는다
-    d.geometry("%dx%d+%d+%d" % (w, h, max(0, (sw - w) // 2 + off), max(0, (sh - h) // 2 + off)))
-    make_round(d, px(12))
-    d.lift()
+    card_show(d, px, off=len(live) * px(28), min_w=px(320))            # 여러 개가 한꺼번에 울리면 조금씩 비껴 쌓는다
     _LIVE_NOTICES[:] = live + [d]
     try:
         d.bell()
     except Exception:
         pass
     return d
+
+
+def ask_yesno(master, px, font, title, message, yes="예", no="아니오", p=None, warn=False):
+    """둥근 카드 확인 창 (윈도우 기본 확인창 대신). 예 → True, 아니오·✕·Esc → False. 답할 때까지 기다린다."""
+    p = p or NEUTRAL
+    d, inner = card_window(master, px, font, title, p, warn)
+    ans = [False]
+
+    def done(v):
+        ans[0] = v
+        d.destroy()
+
+    tk.Label(inner, text=message, bg=p["bg"], fg=INK, font=font(10), justify="left", wraplength=px(380)
+             ).pack(anchor="w", padx=px(18), pady=(px(14), px(4)))
+    bf = tk.Frame(inner, bg=p["bg"])
+    bf.pack(pady=(px(10), px(14)))
+    by = tk.Button(bf, text=yes, font=font(10, True), relief="groove", bg="#00754A", fg="#ffffff", padx=px(18),
+                   command=lambda: done(True))
+    by.pack(side="left", padx=px(4))
+    tk.Button(bf, text=no, font=font(10), relief="groove", bg=p["field"], padx=px(14), command=lambda: done(False)
+              ).pack(side="left", padx=px(4))
+    d.bind("<Return>", lambda e: done(True))
+    d.bind("<Escape>", lambda e: done(False))
+    card_show(d, px, y_div=3)
+    try:
+        d.focus_force()
+        by.focus_set()
+        d.grab_set()
+    except Exception:
+        pass
+    d.wait_window()
+    return ans[0]
 
 
 # ── 포스트잇 창 ──
@@ -720,25 +780,21 @@ class PostIt(tk.Toplevel):
 
     def alarm_dialog(self):
         px = self.px
-        d = tk.Toplevel(self)
-        d.title("메모 알림")
-        d.configure(bg=YEL)
-        d.resizable(False, False)
-        d.attributes("-topmost", True)
-        d.transient(self)
-        tk.Label(d, text="언제 알려 드릴까요?", bg=YEL, fg=INK, font=self.font(10, True)).pack(anchor="w", padx=px(12), pady=(px(10), px(2)))
-        tk.Label(d, text="예) 15:30 · 내일 9:00 · 11/26 15:30", bg=YEL, fg="#6b6b6b", font=self.font(8)).pack(anchor="w", padx=px(12))
-        e = tk.Entry(d, font=self.font(11), width=16, justify="center")
+        c = self.c
+        d, d_in = card_window(self, px, self.font, "⏰ 메모 알림", c)
+        tk.Label(d_in, text="언제 알려 드릴까요?", bg=c["bg"], fg=INK, font=self.font(10, True)).pack(anchor="w", padx=px(12), pady=(px(10), px(2)))
+        tk.Label(d_in, text="예) 15:30 · 내일 9:00 · 11/26 15:30", bg=c["bg"], fg="#6b6b6b", font=self.font(8)).pack(anchor="w", padx=px(12))
+        e = tk.Entry(d_in, font=self.font(11), width=16, justify="center")
         e.pack(padx=px(12), pady=px(6))
         dt = alarm_dt(self.m)
         e.insert(0, alarm_label(dt) if dt and not self.m.get("fired") else (datetime.now() + timedelta(minutes=30)).strftime("%H:%M"))
-        quick = tk.Frame(d, bg=YEL)
+        quick = tk.Frame(d_in, bg=c["bg"])
         quick.pack(padx=px(12))
         for lab, mins in (("10분 뒤", 10), ("30분 뒤", 30), ("1시간 뒤", 60)):
-            tk.Button(quick, text=lab, font=self.font(8), relief="groove", bg="#fff8dc",
+            tk.Button(quick, text=lab, font=self.font(8), relief="groove", bg=c["field"],
                       command=lambda n=mins: (e.delete(0, "end"), e.insert(0, (datetime.now() + timedelta(minutes=n)).strftime("%H:%M")))
                       ).pack(side="left", padx=px(2))
-        err = tk.Label(d, text="", bg=YEL, fg="#c82014", font=self.font(8))
+        err = tk.Label(d_in, text="", bg=c["bg"], fg="#c82014", font=self.font(8))
         err.pack()
 
         def ok(ev=None):
@@ -759,15 +815,14 @@ class PostIt(tk.Toplevel):
             self.show_alarm()
             d.destroy()
 
-        bf = tk.Frame(d, bg=YEL)
+        bf = tk.Frame(d_in, bg=c["bg"])
         bf.pack(pady=(px(2), px(10)))
         tk.Button(bf, text="알림 맞추기", font=self.font(9, True), relief="groove", bg="#00754A", fg="#ffffff", padx=px(8), command=ok).pack(side="left", padx=px(3))
         if dt and not self.m.get("fired"):
-            tk.Button(bf, text="알림 끄기", font=self.font(9), relief="groove", bg="#fff8dc", padx=px(6), command=off).pack(side="left", padx=px(3))
-        tk.Button(bf, text="취소", font=self.font(9), relief="groove", bg="#fff8dc", padx=px(6), command=d.destroy).pack(side="left", padx=px(3))
+            tk.Button(bf, text="알림 끄기", font=self.font(9), relief="groove", bg=c["field"], padx=px(6), command=off).pack(side="left", padx=px(3))
+        tk.Button(bf, text="취소", font=self.font(9), relief="groove", bg=c["field"], padx=px(6), command=d.destroy).pack(side="left", padx=px(3))
         e.bind("<Return>", ok)
-        d.update_idletasks()
-        d.geometry("+%d+%d" % (self.winfo_rootx() + px(10), self.winfo_rooty() + px(30)))
+        card_show(d, px, at=(self.winfo_rootx() + px(10), self.winfo_rooty() + px(30)))
         d.focus_force()
         e.focus_set()
         e.select_range(0, "end")
@@ -844,14 +899,10 @@ class PostIt(tk.Toplevel):
             return
         px = self.px
         NB = "#f6f6f6"
-        d = self._style_d = tk.Toplevel(self)
-        d.title("메모 꾸미기")
-        d.configure(bg=NB)
-        d.resizable(False, False)
-        d.attributes("-topmost", True)
-        d.transient(self)
-        tk.Label(d, text="배경색", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(10), px(4)))
-        row = tk.Frame(d, bg=NB)
+        d, d_in = card_window(self, px, self.font, "🎨 메모 꾸미기", NEUTRAL)
+        self._style_d = d
+        tk.Label(d_in, text="배경색", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(10), px(4)))
+        row = tk.Frame(d_in, bg=NB)
         row.pack(padx=px(10))
         sw = {}
 
@@ -872,8 +923,8 @@ class PostIt(tk.Toplevel):
             w.bind("<Button-1>", lambda e, kk=k: pick(kk))
             sw[k] = w
         mark()
-        tk.Label(d, text="투명도  (오른쪽일수록 비쳐 보여요)", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(8), 0))
-        sc = tk.Scale(d, from_=0, to=int(round((1 - ALPHA_MIN) * 100)), orient="horizontal", length=px(220), bg=NB,
+        tk.Label(d_in, text="투명도  (오른쪽일수록 비쳐 보여요)", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(8), 0))
+        sc = tk.Scale(d_in, from_=0, to=int(round((1 - ALPHA_MIN) * 100)), orient="horizontal", length=px(220), bg=NB,
                       highlightthickness=0, troughcolor="#dcdcdc", showvalue=True, resolution=5, font=self.font(8))
         sc.set(int(round((1 - memo_alpha(self.m)) * 100)))
         sc.pack(padx=px(12))
@@ -888,15 +939,14 @@ class PostIt(tk.Toplevel):
             self.strip.changed()
 
         sc.configure(command=set_alpha)
-        tk.Label(d, text="글씨 크기  (글 위에서 Ctrl+마우스 휠로도 바꿔요)", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(8), 0))
-        fs = self._fs_scale = tk.Scale(d, from_=FS_MIN, to=FS_MAX, orient="horizontal", length=px(220), bg=NB, highlightthickness=0,
+        tk.Label(d_in, text="글씨 크기  (글 위에서 Ctrl+마우스 휠로도 바꿔요)", bg=NB, fg=INK, font=self.font(9, True)).pack(anchor="w", padx=px(12), pady=(px(8), 0))
+        fs = self._fs_scale = tk.Scale(d_in, from_=FS_MIN, to=FS_MAX, orient="horizontal", length=px(220), bg=NB, highlightthickness=0,
                                        troughcolor="#dcdcdc", showvalue=True, resolution=1, font=self.font(8))
         fs.set(memo_fs(self.m))
         fs.pack(padx=px(12))
         fs.configure(command=lambda v: self.set_fs(int(float(v))))
-        tk.Button(d, text="닫기", font=self.font(9), relief="groove", padx=px(10), command=d.destroy).pack(pady=(px(4), px(10)))
-        d.update_idletasks()
-        d.geometry("+%d+%d" % (self.winfo_rootx() + px(10), self.winfo_rooty() + px(30)))
+        tk.Button(d_in, text="닫기", font=self.font(9), relief="groove", padx=px(10), command=d.destroy).pack(pady=(px(4), px(10)))
+        card_show(d, px, at=(self.winfo_rootx() + px(10), self.winfo_rooty() + px(30)))
 
     # 옮기기·닫기·지우기
     def _drag_start(self, e):
